@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polymarket Sports Copy Bot</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div>
+            <div class="brand-title">PolyCopy</div>
+            <div class="brand-subtitle">Sports wallet copier</div>
+          </div>
+        </div>
+        <nav class="nav">
+          <a class="nav-item active" href="#overview">Overview</a>
+          <a class="nav-item" href="#positions">Positions</a>
+          <a class="nav-item" href="#events">Events</a>
+          <a class="nav-item" href="#wallets">Wallets</a>
+        </nav>
+        <div class="side-status">
+          <span class="dot" id="side-dot"></span>
+          <span id="side-mode">Loading</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1>Polymarket Sports Copy Bot</h1>
+            <p id="subline">Connecting to runtime...</p>
+          </div>
+          <div class="top-actions">
+            <button class="icon-button" id="refresh-button" title="Refresh dashboard" aria-label="Refresh dashboard">R</button>
+            <button class="primary-button" id="scan-button">Run Scan</button>
+          </div>
+        </header>
+
+        <section class="metrics" id="overview">
+          <article class="metric-card">
+            <span class="metric-label">Mode</span>
+            <strong id="metric-mode">-</strong>
+            <small id="metric-live">-</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Copy Size</span>
+            <strong id="metric-copy-size">-</strong>
+            <small>Per copied buy</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Open Positions</span>
+            <strong id="metric-positions">-</strong>
+            <small id="metric-shares">-</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Events</span>
+            <strong id="metric-events">-</strong>
+            <small id="metric-flow">-</small>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel wide" id="positions">
+            <div class="panel-header">
+              <div>
+                <h2>Tracked Positions</h2>
+                <p>Only positions created by this bot are eligible for auto-sell.</p>
+              </div>
+              <label class="switch-row">
+                <input id="include-closed" type="checkbox" />
+                <span>Closed</span>
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Market</th>
+                    <th>Outcome</th>
+                    <th>Shares</th>
+                    <th>Avg Entry</th>
+                    <th>Bought</th>
+                    <th>Sold</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="positions-body">
+                  <tr><td colspan="7" class="empty">No positions loaded.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel" id="wallets">
+            <div class="panel-header">
+              <div>
+                <h2>Wallet Scoring</h2>
+                <p>Rank configured wallets by sports activity.</p>
+              </div>
+              <button class="secondary-button" id="score-button">Score</button>
+            </div>
+            <div id="wallet-score-list" class="score-list">
+              <div class="empty-block">No score loaded.</div>
+            </div>
+          </article>
+
+          <article class="panel" id="risk">
+            <div class="panel-header">
+              <div>
+                <h2>Risk Controls</h2>
+                <p>Live orders require explicit environment approval.</p>
+              </div>
+            </div>
+            <dl class="risk-list">
+              <div><dt>Sports only</dt><dd id="risk-sports">-</dd></div>
+              <div><dt>Auto sells</dt><dd id="risk-sells">-</dd></div>
+              <div><dt>Sell mode</dt><dd id="risk-sell-mode">-</dd></div>
+              <div><dt>Slippage</dt><dd id="risk-slippage">-</dd></div>
+              <div><dt>Daily live cap</dt><dd id="risk-daily-cap">-</dd></div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="panel full" id="events">
+          <div class="panel-header">
+            <div>
+              <h2>Recent Events</h2>
+              <p>Copies, skips, blocks, and price guard results.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Action</th>
+                  <th>Reason</th>
+                  <th>Market</th>
+                  <th>Outcome</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody id="events-body">
+                <tr><td colspan="6" class="empty">No events loaded.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
