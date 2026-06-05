@@ -1,0 +1,9 @@
+{
+  "build": {
+    "type": "dockerfile"
+  },
+  "run": {
+    "port": 8080
+  }
+}
+
