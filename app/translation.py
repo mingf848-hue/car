@@ -79,6 +79,44 @@ OUTCOME_NAMES = {
     "hurricanes": "卡罗莱纳飓风",
 }
 
+ENTITY_NAMES = {
+    "argentina": "阿根廷",
+    "brazil": "巴西",
+    "england": "英格兰",
+    "france": "法国",
+    "germany": "德国",
+    "italy": "意大利",
+    "netherlands": "荷兰",
+    "spain": "西班牙",
+    "portugal": "葡萄牙",
+    "belgium": "比利时",
+    "croatia": "克罗地亚",
+    "uruguay": "乌拉圭",
+    "usa": "美国",
+    "united-states": "美国",
+    "mexico": "墨西哥",
+    "canada": "加拿大",
+    "japan": "日本",
+    "south-korea": "韩国",
+    "morocco": "摩洛哥",
+    "senegal": "塞内加尔",
+    "czechia": "捷克",
+    "scotland": "苏格兰",
+    "poland": "波兰",
+    "switzerland": "瑞士",
+    "denmark": "丹麦",
+    "austria": "奥地利",
+    "colombia": "哥伦比亚",
+    "chile": "智利",
+    "paraguay": "巴拉圭",
+    "ecuador": "厄瓜多尔",
+    "australia": "澳大利亚",
+    "new-zealand": "新西兰",
+    "saudi-arabia": "沙特阿拉伯",
+    "ivory-coast": "科特迪瓦",
+    "costa-rica": "哥斯达黎加",
+}
+
 
 def _line(value: Optional[str]) -> str:
     text = str(value or "").strip()
@@ -99,10 +137,24 @@ def _team(code: str) -> str:
     return TEAM_NAMES.get(code.lower(), code.upper())
 
 
+def _entity(value: str) -> str:
+    key = str(value or "").strip().lower().replace(" ", "-")
+    if key in ENTITY_NAMES:
+        return ENTITY_NAMES[key]
+    return " ".join(part.capitalize() for part in key.split("-") if part)
+
+
+def _world_cup_question(entity: str, year: str) -> str:
+    return f"{_entity(entity)}会赢得 {year} FIFA 世界杯吗？"
+
+
 def _humanize_title(text: str) -> str:
     title = str(text or "").strip()
     if not title:
         return ""
+    world_cup = re.fullmatch(r"Will (.+) win the (\d{4}) FIFA World Cup\?", title, re.IGNORECASE)
+    if world_cup:
+        return _world_cup_question(world_cup.group(1), world_cup.group(2))
     replacements = {
         "Will ": "",
         " win the NBA game?": " 赢下 NBA 比赛？",
@@ -119,6 +171,9 @@ def _humanize_title(text: str) -> str:
 def translate_market(slug: str = "", title: str = "") -> str:
     slug = str(slug or "").strip().lower()
     parts = slug.split("-") if slug else []
+    world_cup_slug = re.fullmatch(r"will-(.+)-win-the-(\d{4})-fifa-world-cup(?:-\d+)?", slug)
+    if world_cup_slug:
+        return _world_cup_question(world_cup_slug.group(1), world_cup_slug.group(2))
     if len(parts) >= 7 and parts[0] in SPORT_NAMES and re.fullmatch(r"\d{4}", parts[3] or ""):
         sport = SPORT_NAMES[parts[0]]
         away = _team(parts[1])

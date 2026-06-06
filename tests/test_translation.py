@@ -16,6 +16,16 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(translate_outcome("New York Mets"), "纽约大都会")
         self.assertEqual(translate_outcome("Under"), "小分")
 
+    def test_world_cup_markets_are_rendered_in_chinese(self):
+        self.assertEqual(
+            translate_market("will-netherlands-win-the-2026-fifa-world-cup-739", ""),
+            "荷兰会赢得 2026 FIFA 世界杯吗？",
+        )
+        self.assertEqual(
+            translate_market("", "Will Czechia win the 2026 FIFA World Cup?"),
+            "捷克会赢得 2026 FIFA 世界杯吗？",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
