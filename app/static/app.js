@@ -105,6 +105,79 @@ function reasonLabel(reason) {
   return labels[reason] || reason || "-";
 }
 
+function scanInsight(summary, config = {}) {
+  if (!summary) {
+    if (!config.smart_wallets?.length) {
+      return {
+        tone: "warn",
+        title: "还没有可扫描的钱包",
+        detail: "先点“发现钱包”，复制候选地址，再到 Zeabur Variables 填入 SMART_WALLETS。",
+        next: "发现钱包",
+      };
+    }
+    return {
+      tone: "idle",
+      title: "等待首次扫描",
+      detail: "点击“立即扫描”后，会读取已配置钱包的近期交易。",
+      next: "立即扫描",
+    };
+  }
+  if (summary.errors?.length) {
+    return {
+      tone: "bad",
+      title: "扫描遇到问题",
+      detail: summary.errors.map(reasonLabel).join("；"),
+      next: "点诊断",
+    };
+  }
+  if (summary.blocked) {
+    return {
+      tone: "bad",
+      title: "服务器地区被限制",
+      detail: "Polymarket 判定当前部署地区不可开仓，换 Zeabur 区域后再试。",
+      next: "换区域",
+    };
+  }
+  if (summary.warmup_wallets) {
+    return {
+      tone: "ok",
+      title: "首次预热完成",
+      detail: `已初始化 ${summary.warmup_wallets} 个钱包，历史交易只记录不跟单，之后的新交易才会触发跟单。`,
+      next: "等待新交易",
+    };
+  }
+  if (summary.fetched === 0 && summary.processed === 0 && summary.copied === 0 && summary.skipped === 0) {
+    return {
+      tone: "warn",
+      title: "没有读取到近期交易",
+      detail: "已配置钱包近期没有公开交易，或这个地址不是 Polymarket 活跃钱包。",
+      next: "换候选钱包",
+    };
+  }
+  if (summary.processed === 0 && summary.fetched > 0) {
+    return {
+      tone: "idle",
+      title: "没有新交易",
+      detail: `读取到 ${summary.fetched} 条记录，但都是之前已经处理过的交易。`,
+      next: "等待新交易",
+    };
+  }
+  if (summary.copied === 0 && summary.skipped > 0) {
+    return {
+      tone: "warn",
+      title: "本轮全部跳过",
+      detail: `处理 ${summary.processed} 笔，跳过 ${summary.skipped} 笔。查看最近事件里的跳过原因。`,
+      next: "看事件",
+    };
+  }
+  return {
+    tone: "ok",
+    title: "扫描完成",
+    detail: `本轮跟单 ${summary.copied || 0} 笔，跳过 ${summary.skipped || 0} 笔。`,
+    next: "继续监控",
+  };
+}
+
 function toast(message) {
   const el = $("toast");
   el.textContent = message;
@@ -160,6 +233,25 @@ function renderStatus(payload) {
   $("risk-sell-mode").textContent = sellModeLabel(config.sell_mode);
   $("risk-slippage").textContent = `${config.max_slippage_bps || 0} 基点`;
   $("risk-daily-cap").textContent = formatUsdc(config.max_live_daily_usdc);
+
+  const insight = scanInsight(payload.last_summary, config);
+  $("status-card").className = `status-card primary-status ${insight.tone}`;
+  $("status-title").textContent = insight.title;
+  $("status-detail").textContent = insight.detail;
+  $("configured-wallets").textContent = `${config.smart_wallets?.length || 0} 个`;
+  $("configured-wallets-detail").textContent = config.smart_wallets?.length
+    ? `扫描会读取这些地址，每次跟买固定 ${formatUsdc(config.copy_amount_usdc || 5)}。`
+    : "现在扫描不会有结果，因为 SMART_WALLETS 为空。";
+  $("scan-summary").textContent = payload.last_summary
+    ? `${payload.last_summary.copied || 0} 跟单 / ${payload.last_summary.skipped || 0} 跳过`
+    : "尚未扫描";
+  $("scan-summary-detail").textContent = payload.last_summary
+    ? `读取 ${payload.last_summary.fetched || 0} 条，处理 ${payload.last_summary.processed || 0} 条。`
+    : "自动轮询或手动扫描后会更新。";
+  $("next-action").textContent = insight.next;
+  $("next-action-detail").textContent = config.smart_wallets?.length
+    ? "先看最近事件，再决定是否换钱包。"
+    : "先复制候选钱包，再填入 Zeabur Variables。";
 }
 
 function renderPositions(items) {
@@ -240,10 +332,10 @@ function renderLeaderboard(items) {
       return `<div class="score-row leaderboard-row">
         <div>
           <strong>${escapeHtml(name)}</strong>
-          <small>第 ${escapeHtml(item.rank || "-")} 名 · ${escapeHtml(shortWallet(wallet))}</small>
+          <small>排名 ${escapeHtml(item.rank || "-")} · 地址 ${escapeHtml(shortWallet(wallet))}</small>
         </div>
         <div class="score-actions">
-          <span>${formatUsdc(item.pnl)} / ${formatUsdc(item.vol)}</span>
+          <span>盈亏 ${formatUsdc(item.pnl)} · 成交 ${formatUsdc(item.vol)}</span>
           <button class="mini-button" data-wallet="${escapeHtml(wallet)}">复制</button>
         </div>
       </div>`;
@@ -278,9 +370,8 @@ async function runScan() {
   button.textContent = "扫描中";
   try {
     const result = await api("/scan", { method: "POST" });
-    const warmed = result.warmed_up ? `，预热历史交易 ${result.warmed_up} 笔` : "";
-    const warmupWallets = result.warmup_wallets ? `，完成 ${result.warmup_wallets} 个钱包首次扫描` : "";
-    toast(`扫描完成：跟单 ${result.copied} 笔，跳过 ${result.skipped} 笔${warmed}${warmupWallets}`);
+    const insight = scanInsight(result, state.status?.config || {});
+    longToast(`${insight.title}：${insight.detail}`);
     await refreshAll();
   } catch (error) {
     toast(`扫描失败：${error.message}`);
@@ -359,6 +450,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("diagnose-button").addEventListener("click", diagnose);
   $("score-button").addEventListener("click", scoreWallets);
   $("discover-button").addEventListener("click", discoverWallets);
+  $("discover-top-button").addEventListener("click", discoverWallets);
   $("leaderboard-list").addEventListener("click", (event) => {
     const button = event.target.closest("[data-wallet]");
     if (button) copyWallet(button.dataset.wallet).catch((error) => toast(`复制失败：${error.message}`));

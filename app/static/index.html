@@ -32,14 +32,38 @@
         <header class="topbar">
           <div>
             <h1>Polymarket 体育跟单助手</h1>
-            <p id="subline">正在连接运行环境...</p>
+            <p id="subline">正在读取 Zeabur 运行状态...</p>
           </div>
           <div class="top-actions">
             <button class="icon-button" id="refresh-button" title="刷新面板" aria-label="刷新面板">刷</button>
             <button class="secondary-button" id="diagnose-button">诊断</button>
+            <button class="secondary-button" id="discover-top-button">发现钱包</button>
             <button class="primary-button" id="scan-button">立即扫描</button>
           </div>
         </header>
+
+        <section class="status-strip" aria-live="polite">
+          <div class="status-card primary-status" id="status-card">
+            <span class="status-kicker">当前状态</span>
+            <strong id="status-title">等待连接</strong>
+            <p id="status-detail">面板加载后会显示扫描为什么没有产生跟单。</p>
+          </div>
+          <div class="status-card">
+            <span class="status-kicker">已配置钱包</span>
+            <strong id="configured-wallets">-</strong>
+            <p id="configured-wallets-detail">扫描只读取这里配置的钱包。</p>
+          </div>
+          <div class="status-card">
+            <span class="status-kicker">最近扫描</span>
+            <strong id="scan-summary">-</strong>
+            <p id="scan-summary-detail">点击“立即扫描”后刷新。</p>
+          </div>
+          <div class="status-card">
+            <span class="status-kicker">下一步</span>
+            <strong id="next-action">先诊断</strong>
+            <p id="next-action-detail">如果没有钱包，先发现并复制地址。</p>
+          </div>
+        </section>
 
         <section class="metrics" id="overview">
           <article class="metric-card">
@@ -100,7 +124,7 @@
             <div class="panel-header">
               <div>
                 <h2>钱包评分</h2>
-                <p>按体育交易活跃度给已配置钱包排序。</p>
+                <p>给已填入环境变量的钱包做二次评分。</p>
               </div>
               <button class="secondary-button" id="score-button">评分</button>
             </div>
@@ -112,13 +136,13 @@
           <article class="panel" id="discover">
             <div class="panel-header">
               <div>
-                <h2>发现钱包</h2>
-                <p>从 Polymarket 体育排行榜读取可跟踪的钱包。</p>
+                <h2>候选聪明钱包</h2>
+                <p>从体育排行榜读取候选地址，复制后填入 SMART_WALLETS。</p>
               </div>
               <button class="secondary-button" id="discover-button">发现</button>
             </div>
             <div id="leaderboard-list" class="score-list">
-              <div class="empty-block">点击“发现”查看体育榜单钱包。</div>
+              <div class="empty-block">点击“发现钱包”，这里会显示可复制的钱包地址。</div>
             </div>
           </article>
 
