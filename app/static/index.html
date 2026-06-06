@@ -3,198 +3,109 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Polymarket 体育跟单助手</title>
+    <title>Polymarket 自动跟单工作台</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">P</div>
-          <div>
-            <div class="brand-title">体育跟单</div>
-            <div class="brand-subtitle">聪明钱包跟单面板</div>
-          </div>
+    <main class="workspace">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Polymarket Sports Copy</p>
+          <h1>自动跟单工作台</h1>
+          <p id="system-line">正在连接服务...</p>
         </div>
-        <nav class="nav">
-          <a class="nav-item active" href="#overview">总览</a>
-          <a class="nav-item" href="#positions">持仓</a>
-          <a class="nav-item" href="#events">事件</a>
-          <a class="nav-item" href="#wallets">钱包</a>
-        </nav>
-        <div class="side-status">
-          <span class="dot" id="side-dot"></span>
-          <span id="side-mode">加载中</span>
+        <div class="header-actions">
+          <button class="ghost-button" id="refresh-button">刷新</button>
+          <button class="ghost-button" id="diagnose-button">诊断</button>
+          <button class="primary-button" id="manual-scan-button">手动补查</button>
         </div>
-      </aside>
+      </header>
 
-      <main class="main">
-        <header class="topbar">
-          <div>
-            <h1>Polymarket 体育跟单助手</h1>
-            <p id="subline">正在读取 Zeabur 运行状态...</p>
-          </div>
-          <div class="top-actions">
-            <button class="icon-button" id="refresh-button" title="刷新面板" aria-label="刷新面板">刷</button>
-            <button class="secondary-button" id="diagnose-button">诊断</button>
-            <button class="secondary-button" id="discover-top-button">发现钱包</button>
-            <button class="primary-button" id="scan-button">手动补查</button>
-          </div>
-        </header>
+      <section class="ops-grid" aria-live="polite">
+        <article class="ops-card main-state" id="state-card">
+          <span>自动状态</span>
+          <strong id="state-title">加载中</strong>
+          <p id="state-detail">后台会自动检查已启用的钱包。</p>
+        </article>
+        <article class="ops-card">
+          <span>跟单钱包</span>
+          <strong id="active-wallet-count">-</strong>
+          <p id="active-wallet-detail">启用后自动跟单。</p>
+        </article>
+        <article class="ops-card">
+          <span>跟单金额</span>
+          <strong id="copy-size">-</strong>
+          <p>每个新买单固定金额。</p>
+        </article>
+        <article class="ops-card">
+          <span>最近检查</span>
+          <strong id="last-check">-</strong>
+          <p id="next-check">等待后台轮询。</p>
+        </article>
+      </section>
 
-        <section class="status-strip" aria-live="polite">
-          <div class="status-card primary-status" id="status-card">
-            <span class="status-kicker">当前状态</span>
-            <strong id="status-title">等待连接</strong>
-            <p id="status-detail">面板加载后会显示自动跟单为什么没有成交。</p>
-          </div>
-          <div class="status-card">
-            <span class="status-kicker">自动跟单</span>
-            <strong id="auto-status">-</strong>
-            <p id="auto-detail">服务启动后会自动轮询。</p>
-          </div>
-          <div class="status-card">
-            <span class="status-kicker">已配置钱包</span>
-            <strong id="configured-wallets">-</strong>
-            <p id="configured-wallets-detail">自动检查只读取这里配置的钱包。</p>
-          </div>
-          <div class="status-card">
-            <span class="status-kicker">最近检查</span>
-            <strong id="scan-summary">-</strong>
-            <p id="scan-summary-detail">自动轮询或手动补查后刷新。</p>
-          </div>
-          <div class="status-card">
-            <span class="status-kicker">下一步</span>
-            <strong id="next-action">先诊断</strong>
-            <p id="next-action-detail">如果没有钱包，先发现并复制地址。</p>
-          </div>
-        </section>
+      <section class="action-rail">
+        <button class="rail-action active" data-section="followed-section">跟单钱包</button>
+        <button class="rail-action" data-section="discover-section">发现候选</button>
+        <button class="rail-action" data-section="detail-section">下注详情</button>
+        <button class="rail-action" data-section="events-section">事件流水</button>
+      </section>
 
-        <section class="metrics" id="overview">
-          <article class="metric-card">
-            <span class="metric-label">运行模式</span>
-            <strong id="metric-mode">-</strong>
-            <small id="metric-live">-</small>
-          </article>
-          <article class="metric-card">
-            <span class="metric-label">跟单金额</span>
-            <strong id="metric-copy-size">-</strong>
-            <small>每次跟买固定金额</small>
-          </article>
-          <article class="metric-card">
-            <span class="metric-label">当前持仓</span>
-            <strong id="metric-positions">-</strong>
-            <small id="metric-shares">-</small>
-          </article>
-          <article class="metric-card">
-            <span class="metric-label">事件记录</span>
-            <strong id="metric-events">-</strong>
-            <small id="metric-flow">-</small>
-          </article>
-        </section>
-
-        <section class="content-grid">
-          <article class="panel wide" id="positions">
-            <div class="panel-header">
-              <div>
-                <h2>跟单持仓</h2>
-                <p>只会自动卖出本程序自己跟买产生的持仓。</p>
-              </div>
-              <label class="switch-row">
-                <input id="include-closed" type="checkbox" />
-                <span>显示已平仓</span>
-              </label>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>市场</th>
-                    <th>选项</th>
-                    <th>份额</th>
-                    <th>均价</th>
-                    <th>买入</th>
-                    <th>卖出</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody id="positions-body">
-                  <tr><td colspan="7" class="empty">暂无持仓。</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
-
-          <article class="panel" id="wallets">
-            <div class="panel-header">
-              <div>
-                <h2>钱包评分</h2>
-                <p>给已填入环境变量的钱包做二次评分。</p>
-              </div>
-              <button class="secondary-button" id="score-button">评分</button>
-            </div>
-            <div id="wallet-score-list" class="score-list">
-              <div class="empty-block">暂无评分。</div>
-            </div>
-          </article>
-
-          <article class="panel" id="discover">
-            <div class="panel-header">
-              <div>
-                <h2>候选聪明钱包</h2>
-                <p>从体育排行榜读取候选地址，复制后填入 SMART_WALLETS。</p>
-              </div>
-              <button class="secondary-button" id="discover-button">发现</button>
-            </div>
-            <div id="leaderboard-list" class="score-list">
-              <div class="empty-block">点击“发现钱包”，这里会显示可复制的钱包地址。</div>
-            </div>
-          </article>
-
-          <article class="panel" id="risk">
-            <div class="panel-header">
-              <div>
-                <h2>风控设置</h2>
-                <p>真实下单必须在环境变量里显式开启。</p>
-              </div>
-            </div>
-            <dl class="risk-list">
-              <div><dt>只跟体育</dt><dd id="risk-sports">-</dd></div>
-              <div><dt>自动跟卖</dt><dd id="risk-sells">-</dd></div>
-              <div><dt>卖出规则</dt><dd id="risk-sell-mode">-</dd></div>
-              <div><dt>最大滑点</dt><dd id="risk-slippage">-</dd></div>
-              <div><dt>每日实盘上限</dt><dd id="risk-daily-cap">-</dd></div>
-            </dl>
-          </article>
-        </section>
-
-        <section class="panel full" id="events">
-          <div class="panel-header">
+      <section class="layout-grid">
+        <article class="panel wallet-panel" id="followed-section">
+          <div class="panel-head">
             <div>
-              <h2>最近事件</h2>
-              <p>跟买、跟卖、跳过、预热和风控结果都会显示在这里。</p>
+              <h2>正在跟单的钱包</h2>
+              <p>这里的钱包会被后台自动轮询；可随时暂停或恢复。</p>
             </div>
           </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>动作</th>
-                  <th>原因</th>
-                  <th>市场</th>
-                  <th>选项</th>
-                  <th>金额</th>
-                </tr>
-              </thead>
-              <tbody id="events-body">
-                <tr><td colspan="6" class="empty">暂无事件。</td></tr>
-              </tbody>
-            </table>
+          <div id="followed-wallets" class="wallet-list"></div>
+        </article>
+
+        <article class="panel discover-panel" id="discover-section">
+          <div class="panel-head">
+            <div>
+              <h2>候选聪明钱包</h2>
+              <p>来自体育排行榜。先查看下注，再决定是否跟单。</p>
+            </div>
+            <button class="secondary-button" id="discover-button">加载候选</button>
           </div>
-        </section>
-      </main>
-    </div>
+          <div id="candidate-wallets" class="candidate-list"></div>
+        </article>
+
+        <article class="panel detail-panel" id="detail-section">
+          <div class="panel-head">
+            <div>
+              <h2>钱包下注详情</h2>
+              <p id="detail-subtitle">选择一个钱包后查看近期买卖。</p>
+            </div>
+            <button class="secondary-button" id="follow-selected-button" disabled>跟单此钱包</button>
+          </div>
+          <div class="detail-summary" id="detail-summary"></div>
+          <div id="trade-list" class="trade-list"></div>
+        </article>
+
+        <article class="panel positions-panel">
+          <div class="panel-head">
+            <div>
+              <h2>本地持仓</h2>
+              <p>只显示本程序自己跟单产生的仓位。</p>
+            </div>
+          </div>
+          <div id="positions-list" class="compact-list"></div>
+        </article>
+
+        <article class="panel events-panel" id="events-section">
+          <div class="panel-head">
+            <div>
+              <h2>事件流水</h2>
+              <p>自动跟买、跳过、预热、风控都会记录。</p>
+            </div>
+          </div>
+          <div id="events-list" class="event-list"></div>
+        </article>
+      </section>
+    </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="/static/app.js"></script>

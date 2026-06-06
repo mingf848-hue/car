@@ -128,6 +128,32 @@ class EngineTests(unittest.TestCase):
             self.assertIsNotNone(position)
             self.assertEqual(position["open_shares"], 10.0)
 
+    def test_runtime_followed_wallets_are_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                smart_wallets=(),
+                sqlite_path=Path(tmp) / "bot.sqlite3",
+                copy_amount_usdc=5,
+                block_on_geoblock=False,
+            )
+            public = FakePublic()
+            public.round = 1
+            executor = FakeExecutor()
+            state = StateStore(settings.sqlite_path)
+            state.upsert_followed_wallet("0xabc", "runtime wallet", "test", active=True)
+            engine = CopyTradingEngine(settings, state, public, executor)
+
+            summary = run(engine.run_once())
+
+            self.assertEqual(summary["wallets"], 1)
+            self.assertEqual(summary["processed"], 0)
+            self.assertEqual(summary["warmup_wallets"], 1)
+
+            public.round = 2
+            summary = run(engine.run_once())
+
+            self.assertEqual(summary["wallets"], 1)
+
     def test_leader_sell_closes_tracked_position(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(

@@ -25,9 +25,10 @@ class CopyTradingEngine:
         self.classifier = classifier or DeepSeekSportsClassifier(settings)
 
     async def run_once(self) -> Dict[str, Any]:
+        wallets = self._target_wallets()
         summary = {
             "started_at": int(time.time()),
-            "wallets": len(self.settings.smart_wallets),
+            "wallets": len(wallets),
             "fetched": 0,
             "warmed_up": 0,
             "warmup_wallets": 0,
@@ -38,11 +39,11 @@ class CopyTradingEngine:
             "errors": [],
         }
 
-        if not self.settings.smart_wallets:
+        if not wallets:
             result = CopyResult(
                 trade=None,
                 action="config_error",
-                reason="未配置 SMART_WALLETS，请在 Zeabur Variables 里填写要跟踪的钱包地址",
+                reason="未选择跟单钱包，请先在候选钱包里点“跟单”，或在 Zeabur Variables 填写 SMART_WALLETS",
             )
             self.state.record_result(result)
             summary["errors"].append(result.reason)
@@ -67,7 +68,7 @@ class CopyTradingEngine:
                 summary["errors"].append(f"geoblock_check_failed: {exc}")
                 return summary
 
-        for wallet in self.settings.smart_wallets:
+        for wallet in wallets:
             try:
                 raw_trades = await self.public.fetch_wallet_trades(wallet, self.settings.activity_limit)
             except Exception as exc:
@@ -121,6 +122,20 @@ class CopyTradingEngine:
                     summary["skipped"] += 1
 
         return summary
+
+    def _target_wallets(self) -> List[str]:
+        wallets = [wallet.lower().strip() for wallet in self.settings.smart_wallets if wallet.strip()]
+        try:
+            wallets.extend(self.state.active_followed_wallet_addresses())
+        except AttributeError:
+            pass
+        seen = set()
+        unique = []
+        for wallet in wallets:
+            if wallet and wallet not in seen:
+                seen.add(wallet)
+                unique.append(wallet)
+        return unique
 
     def _blocked_reason(self, payload: Dict[str, Any]) -> Optional[str]:
         blocked = bool(

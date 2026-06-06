@@ -10,12 +10,12 @@
 - 首次启动默认只做预热，不追历史单，面板会显示“首次预热”事件。
 - 跟随买入开仓，跟随卖出自动平掉该 token 的本地跟单持仓。
 - 每次 BUY 固定 `COPY_AMOUNT_USDC=5`。
-- 首页就是中文控制台：自动跟单状态、风控、持仓、事件、钱包评分、手动补查。
-- “发现钱包”会从 Polymarket 体育排行榜读取候选聪明钱包；复制地址后填入 `SMART_WALLETS` 才会真正跟踪。
+- 首页就是中文工作台：自动跟单状态、候选钱包池、钱包下注详情、跟单/暂停、本地持仓、事件流水。
+- “候选聪明钱包”会从 Polymarket 体育排行榜读取地址；可先查看近期下注，再直接点“跟单”加入自动跟单池。
 - 体育市场筛选：Gamma 市场字段 -> 体育关键词 -> DeepSeek 兜底分类。
 - 下单前检查当前买入/卖出价格，超过 `MAX_SLIPPAGE_BPS` 自动跳过。
 - SQLite 去重、冷却时间、每日实盘最大金额控制。
-- `/score-wallets` 轻量评分接口，用于筛选更像体育交易钱包的地址。
+- 可在 UI 里直接选择或暂停跟单钱包；环境变量钱包和页面选择的钱包会合并为实际跟单池。
 - Zeabur Dockerfile 部署。
 
 ## 目录
@@ -27,7 +27,7 @@ app/
   executor.py           模拟 / 实盘 CLOB 下单适配器
   market_filter.py      体育市场规则 + DeepSeek 分类
   polymarket_client.py  Data API / Gamma API / CLOB price / geoblock
-  scoring.py            钱包轻量评分
+  scoring.py            钱包辅助评分
   main.py               FastAPI 服务入口
   static/               中文前端控制台
 tests/                  无需真实密钥的核心测试
@@ -82,7 +82,7 @@ SMART_WALLETS=0x钱包1
 如果 Zeabur 已经部署成功，但自动跟单没有成交，优先按下面查：
 
 1. `SMART_WALLETS` 没填或填错：控制台会出现“配置错误”。Zeabur 的 Variables 里必须填真实 Polymarket 钱包地址。
-2. “自动跟单”和“发现钱包”不是一回事：自动跟单只看 `SMART_WALLETS`；要看别人钱包，先点“发现”，复制体育榜单钱包，再填回 Zeabur Variables。
+2. “自动跟单”和“发现钱包”不是一回事：自动跟单只看已启用的钱包；要看别人钱包，先点“加载候选”，查看下注详情后点“跟单”。
 3. 第一次自动检查是预热：默认 `COPY_HISTORICAL_ON_FIRST_RUN=false`，历史交易只记录不跟单，之后出现的新交易才会触发跟买/跟卖。页面事件里会显示“首次预热”。
 4. 钱包近期没有交易：程序会显示“这个钱包近期没有读取到可跟踪交易”。换一个近期活跃的钱包，或等它有新交易。
 5. 服务器地区受限：默认 `BLOCK_ON_GEOBLOCK=true`，如果 Polymarket 判定当前服务器地区受限或只允许平仓，程序会停止开仓并在事件里显示原因。
@@ -117,7 +117,7 @@ DERIVE_API_KEY_IF_MISSING=true
 https://你的域名/
 ```
 
-控制台包含运行模式、自动跟单状态、固定跟单金额、自动卖出状态、持仓表、事件流水、手动补查和钱包评分。
+控制台包含运行模式、自动跟单状态、固定跟单金额、候选钱包、下注详情、跟单/暂停、本地持仓、事件流水和手动补查。
 
 ### 查看状态
 
@@ -143,15 +143,25 @@ curl https://你的域名/events
 curl https://你的域名/positions
 ```
 
-### 给钱包打分
+### 查看跟单钱包
 
 ```bash
-curl -X POST https://你的域名/score-wallets \
-  -H 'Content-Type: application/json' \
-  -d '{"wallets":["0xWallet1","0xWallet2"]}'
+curl https://你的域名/wallets
 ```
 
-评分只是筛选辅助，不代表盈利承诺。它会参考近期交易数、体育市场占比、名义成交额、可识别 PnL 字段和活跃度。
+### 查看钱包下注详情
+
+```bash
+curl https://你的域名/wallets/0xWallet/trades
+```
+
+### 从页面加入跟单
+
+```bash
+curl -X POST https://你的域名/wallets/follow \
+  -H 'Content-Type: application/json' \
+  -d '{"wallet":"0xWallet","label":"候选钱包","source":"leaderboard"}'
+```
 
 ## 本地运行
 

@@ -94,6 +94,18 @@ class StateStore:
                 )
                 """
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS followed_wallets (
+                    wallet TEXT PRIMARY KEY,
+                    label TEXT,
+                    source TEXT,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
 
     def is_wallet_initialized(self, wallet: str) -> bool:
         with self._connect() as con:
@@ -109,6 +121,42 @@ class StateStore:
                 "INSERT OR IGNORE INTO wallet_state(wallet, initialized_at) VALUES (?, ?)",
                 (wallet.lower(), int(time.time())),
             )
+
+    def upsert_followed_wallet(self, wallet: str, label: str = "", source: str = "manual", active: bool = True) -> None:
+        normalized = wallet.lower().strip()
+        now = int(time.time())
+        with self._connect() as con:
+            con.execute(
+                """
+                INSERT INTO followed_wallets(wallet, label, source, active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(wallet) DO UPDATE SET
+                    label = COALESCE(NULLIF(excluded.label, ''), followed_wallets.label),
+                    source = excluded.source,
+                    active = excluded.active,
+                    updated_at = excluded.updated_at
+                """,
+                (normalized, label.strip(), source.strip(), 1 if active else 0, now, now),
+            )
+
+    def set_followed_wallet_active(self, wallet: str, active: bool) -> None:
+        with self._connect() as con:
+            con.execute(
+                "UPDATE followed_wallets SET active = ?, updated_at = ? WHERE wallet = ?",
+                (1 if active else 0, int(time.time()), wallet.lower().strip()),
+            )
+
+    def followed_wallets(self, include_inactive: bool = True) -> List[Dict[str, Any]]:
+        query = "SELECT * FROM followed_wallets"
+        if not include_inactive:
+            query += " WHERE active = 1"
+        query += " ORDER BY active DESC, updated_at DESC"
+        with self._connect() as con:
+            rows = con.execute(query).fetchall()
+        return [dict(row) for row in rows]
+
+    def active_followed_wallet_addresses(self) -> List[str]:
+        return [item["wallet"] for item in self.followed_wallets(include_inactive=False)]
 
     def has_seen(self, trade_id: str) -> bool:
         with self._connect() as con:

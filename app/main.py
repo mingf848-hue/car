@@ -31,6 +31,12 @@ class ScoreWalletsRequest(BaseModel):
     wallets: Optional[List[str]] = None
 
 
+class FollowWalletRequest(BaseModel):
+    wallet: str
+    label: str = ""
+    source: str = "ui"
+
+
 def _error_message(exc: Exception) -> str:
     message = str(exc).strip()
     return message or exc.__class__.__name__
@@ -57,6 +63,38 @@ def build_runtime() -> Dict[str, Any]:
         "scan_count": 0,
         "auto_loop_running": False,
         "task": None,
+    }
+
+
+def _combined_wallets(settings: Settings, state: StateStore) -> List[str]:
+    wallets = [wallet.lower().strip() for wallet in settings.smart_wallets if wallet.strip()]
+    wallets.extend(state.active_followed_wallet_addresses())
+    seen = set()
+    unique = []
+    for wallet in wallets:
+        if wallet and wallet not in seen:
+            seen.add(wallet)
+            unique.append(wallet)
+    return unique
+
+
+def _trade_payload(wallet: str, raw: Dict[str, Any]) -> Dict[str, Any]:
+    from .models import WalletTrade
+
+    trade = WalletTrade.from_activity(wallet, raw)
+    return {
+        "wallet": wallet,
+        "trade_id": trade.trade_id,
+        "timestamp": trade.timestamp,
+        "side": trade.side,
+        "token_id": trade.token_id,
+        "market_slug": trade.market_slug,
+        "market_title": trade.market_title,
+        "outcome": trade.outcome,
+        "price": trade.price,
+        "size": trade.size,
+        "usdc_size": round(trade.usdc_size, 2),
+        "raw": raw,
     }
 
 
@@ -105,7 +143,10 @@ async def api_status() -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
     return {
         "name": "polymarket-sports-copy-bot",
-        "config": settings.redacted(),
+        "config": {
+            **settings.redacted(),
+            "effective_wallets": _combined_wallets(settings, runtime["state"]),
+        },
         "automation": {
             "enabled": settings.auto_start,
             "running": bool(runtime.get("task") and not runtime["task"].done()),
@@ -140,6 +181,85 @@ async def scan() -> Dict[str, Any]:
     runtime["last_scan_at"] = int(time.time())
     runtime["scan_count"] = int(runtime.get("scan_count") or 0) + 1
     return summary
+
+
+@app.get("/wallets")
+async def wallets() -> Dict[str, Any]:
+    settings: Settings = runtime["settings"]
+    state: StateStore = runtime["state"]
+    configured = [
+        {
+            "wallet": wallet.lower(),
+            "label": "环境变量钱包",
+            "source": "env",
+            "active": True,
+            "locked": True,
+        }
+        for wallet in settings.smart_wallets
+    ]
+    configured_set = {item["wallet"] for item in configured}
+    dynamic = [
+        {
+            **item,
+            "active": bool(item.get("active")),
+            "locked": False,
+        }
+        for item in state.followed_wallets(include_inactive=True)
+        if item["wallet"] not in configured_set
+    ]
+    return {"wallets": configured + dynamic, "effective_wallets": _combined_wallets(settings, state)}
+
+
+@app.post("/wallets/follow")
+async def follow_wallet(payload: FollowWalletRequest) -> Dict[str, Any]:
+    state: StateStore = runtime["state"]
+    state.upsert_followed_wallet(payload.wallet, payload.label, payload.source, active=True)
+    return await wallets()
+
+
+@app.post("/wallets/{wallet}/pause")
+async def pause_wallet(wallet: str) -> Dict[str, Any]:
+    state: StateStore = runtime["state"]
+    state.set_followed_wallet_active(wallet, False)
+    return await wallets()
+
+
+@app.post("/wallets/{wallet}/resume")
+async def resume_wallet(wallet: str) -> Dict[str, Any]:
+    state: StateStore = runtime["state"]
+    state.set_followed_wallet_active(wallet, True)
+    return await wallets()
+
+
+@app.get("/wallets/{wallet}/trades")
+async def wallet_trades(wallet: str, limit: int = 30) -> Dict[str, Any]:
+    settings: Settings = runtime["settings"]
+    public: PolymarketPublicClient = runtime["public"]
+    try:
+        raw_trades = await public.fetch_wallet_trades(wallet, min(max(limit, 1), settings.activity_limit))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "wallet": wallet,
+            "error": _error_message(exc),
+            "trades": [],
+            "summary": {"count": 0, "buys": 0, "sells": 0, "total_usdc": 0},
+        }
+    trades = [_trade_payload(wallet, raw) for raw in raw_trades]
+    total_usdc = round(sum(item["usdc_size"] for item in trades), 2)
+    buys = sum(1 for item in trades if item["side"] == "BUY")
+    sells = sum(1 for item in trades if item["side"] == "SELL")
+    return {
+        "ok": True,
+        "wallet": wallet,
+        "trades": trades,
+        "summary": {
+            "count": len(trades),
+            "buys": buys,
+            "sells": sells,
+            "total_usdc": total_usdc,
+        },
+    }
 
 
 @app.get("/events")
