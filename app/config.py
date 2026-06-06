@@ -34,6 +34,15 @@ def _int(name: str, default: int) -> int:
     return int(value)
 
 
+def _sqlite_path() -> Path:
+    explicit = os.getenv("SQLITE_PATH", "").strip()
+    if explicit:
+        return Path(explicit)
+    if Path("/data").exists():
+        return Path("/data/bot.sqlite3")
+    return Path("data/bot.sqlite3")
+
+
 @dataclass(frozen=True)
 class Settings:
     data_api_host: str = "https://data-api.polymarket.com"
@@ -123,7 +132,7 @@ class Settings:
             clob_api_secret=os.getenv("CLOB_API_SECRET", "").strip(),
             clob_api_passphrase=os.getenv("CLOB_API_PASSPHRASE", "").strip(),
             derive_api_key_if_missing=_bool("DERIVE_API_KEY_IF_MISSING", True),
-            sqlite_path=Path(os.getenv("SQLITE_PATH", "data/bot.sqlite3")),
+            sqlite_path=_sqlite_path(),
         )
 
     @property
@@ -144,6 +153,11 @@ class Settings:
             "auto_follow_sells": self.auto_follow_sells,
             "sell_mode": self.sell_mode,
             "sqlite_path": str(self.sqlite_path),
+            "storage": {
+                "sqlite_path": str(self.sqlite_path),
+                "volume_path": "/data",
+                "using_volume_path": str(self.sqlite_path).startswith("/data/"),
+            },
             "execution_wallet": {
                 "private_key_configured": bool(self.polymarket_private_key),
                 "funder_configured": bool(self.polymarket_funder),

@@ -44,7 +44,20 @@ zeabur.json             Zeabur 端口配置
 3. 构建方式选择 Dockerfile。
 4. 地区建议优先选 `Tokyo`。不要选择新加坡。是否受限以 Polymarket 官方接口实时返回为准，本程序默认会检查并在受限时停止开仓。
 5. 在 Zeabur Variables 填入 `.env.example` 里的变量。跟单钱包不要填环境变量，进页面后添加。
-6. 启动后访问：
+6. 在服务的 `Volumes` / `硬盘` 页面挂载持久化目录：
+
+```text
+Volume ID: data
+Mount Directory: /data
+```
+
+7. 确认 Zeabur Variables 里有：
+
+```env
+SQLITE_PATH=/data/bot.sqlite3
+```
+
+8. 启动后访问：
 
 ```text
 https://你的-zeabur-域名/
@@ -56,6 +69,7 @@ https://你的-zeabur-域名/events
 
 ```env
 COPY_AMOUNT_USDC=5
+SQLITE_PATH=/data/bot.sqlite3
 EXECUTION_MODE=dry_run
 ACK_TRADING_RISKS=no
 DEEPSEEK_API_KEY=sk-你的deepseek_key
@@ -66,6 +80,17 @@ SELL_MODE=close_full_on_leader_sell
 `COPY_AMOUNT_USDC=5` 是本项目的核心规则：所有被复制的 BUY 都会按 5 USDC 走。
 
 `SELL_MODE=close_full_on_leader_sell` 是当前自动跟卖规则：只要聪明钱包对某个 token 发出 SELL，本系统会检查自己是否曾经跟买并还有未平仓份额；如果有，就卖出这部分持仓。没有本地持仓时不会裸卖。
+
+## 数据持久化
+
+本程序使用 SQLite 保存跟单钱包、已处理交易、本地持仓和事件流水。Zeabur 重新部署会替换容器文件系统，所以数据库必须写入持久化硬盘。
+
+- Docker 镜像默认使用 `SQLITE_PATH=/data/bot.sqlite3`。
+- Zeabur 服务必须挂载 Volume 到 `/data`。
+- 页面 `/api/status` 里的 `config.storage.using_volume_path` 应为 `true`。
+- 如果没有挂载 `/data`，数据会随着重新部署丢失。
+
+Zeabur 官方说明：服务默认是无状态的，重启会重置数据；要持久保存数据，需要把目录挂载到 Volume。挂载时 `Mount Directory` 填 `/data`。
 
 ## 接入自己的钱包
 
