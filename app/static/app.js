@@ -6,6 +6,8 @@ const appState = {
   selectedLabel: "",
   selectedTrades: [],
   tradeFilter: "ALL",
+  detailLoading: false,
+  detailError: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -209,6 +211,16 @@ function renderDetail() {
     $("trade-list").innerHTML = `<div class="empty-state"><strong>未选择钱包</strong><p>从候选池或跟单列表选择一个钱包。</p></div>`;
     return;
   }
+  if (appState.detailLoading) {
+    $("detail-summary").innerHTML = "";
+    $("trade-list").innerHTML = `<div class="empty-state"><strong>正在读取下注详情</strong><p>正在从 Polymarket 数据接口读取这个钱包的近期交易。</p></div>`;
+    return;
+  }
+  if (appState.detailError) {
+    $("detail-summary").innerHTML = "";
+    $("trade-list").innerHTML = `<div class="empty-state error"><strong>下注详情读取失败</strong><p>${escapeHtml(appState.detailError)}</p></div>`;
+    return;
+  }
   const buys = appState.selectedTrades.filter((item) => item.side === "BUY").length;
   const sells = appState.selectedTrades.filter((item) => item.side === "SELL").length;
   const unknown = appState.selectedTrades.filter((item) => tradeSideKey(item.side) === "UNKNOWN").length;
@@ -309,22 +321,44 @@ async function selectWallet(wallet, label = "") {
   appState.selectedWallet = wallet;
   appState.selectedLabel = label;
   appState.selectedTrades = [];
+  appState.detailLoading = true;
+  appState.detailError = "";
   renderCandidates();
   renderWallets();
   renderDetail();
+  focusDetailPanel();
   try {
     const result = await api(`/wallets/${encodeURIComponent(wallet)}/trades?limit=30`);
     if (result.ok === false) {
       appState.selectedTrades = [];
+      appState.detailError = `数据接口不可达：${result.error || "未知错误"}`;
       renderDetail();
-      toast(`数据接口不可达：${result.error || "未知错误"}`, true);
       return;
     }
     appState.selectedTrades = result.trades || [];
+    appState.detailError = "";
     renderDetail();
   } catch (error) {
-    toast(`下注详情读取失败：${error.message}`, true);
+    appState.detailError = error.message;
+    renderDetail();
+  } finally {
+    appState.detailLoading = false;
+    renderDetail();
   }
+}
+
+function focusDetailPanel() {
+  const detail = $("detail-section");
+  if (!detail) return;
+  if (window.matchMedia("(max-width: 1240px)").matches) {
+    detail.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  detail.classList.remove("attention");
+  window.requestAnimationFrame(() => {
+    detail.classList.add("attention");
+    window.setTimeout(() => detail.classList.remove("attention"), 850);
+  });
 }
 
 async function followWallet(wallet, label = "") {
