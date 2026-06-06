@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Dict, List, Optional
 
@@ -7,6 +8,11 @@ from .config import Settings
 from .market_filter import DeepSeekSportsClassifier, looks_like_sports
 from .models import CopyResult, WalletTrade
 from .state import StateStore
+
+
+SCAN_ACTIVITY_LIMIT = 20
+MAX_NEW_TRADES_PER_WALLET = 10
+WALLET_FETCH_TIMEOUT_SECONDS = 20
 
 
 class CopyTradingEngine:
@@ -35,6 +41,7 @@ class CopyTradingEngine:
             "processed": 0,
             "copied": 0,
             "skipped": 0,
+            "backlog_trimmed": 0,
             "blocked": False,
             "errors": [],
         }
@@ -64,7 +71,13 @@ class CopyTradingEngine:
 
         for wallet in wallets:
             try:
-                raw_trades = await self.public.fetch_wallet_trades(wallet, self.settings.activity_limit)
+                raw_trades = await asyncio.wait_for(
+                    self.public.fetch_wallet_trades(wallet, min(self.settings.activity_limit, SCAN_ACTIVITY_LIMIT)),
+                    timeout=WALLET_FETCH_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                summary["errors"].append(f"{wallet}: fetch_timeout")
+                continue
             except Exception as exc:
                 summary["errors"].append(f"{wallet}: fetch_failed: {exc}")
                 continue
@@ -103,9 +116,16 @@ class CopyTradingEngine:
                     continue
                 self.state.initialize_wallet(wallet)
 
-            for trade in trades:
-                if self.state.has_seen(trade.trade_id):
-                    continue
+            unseen_trades = [trade for trade in trades if not self.state.has_seen(trade.trade_id)]
+            if len(unseen_trades) > MAX_NEW_TRADES_PER_WALLET:
+                stale_backlog = unseen_trades[: -MAX_NEW_TRADES_PER_WALLET]
+                for trade in stale_backlog:
+                    self.state.mark_seen(trade)
+                summary["backlog_trimmed"] += len(stale_backlog)
+                summary["skipped"] += len(stale_backlog)
+                unseen_trades = unseen_trades[-MAX_NEW_TRADES_PER_WALLET:]
+
+            for trade in unseen_trades:
                 result = await self._handle_trade(trade)
                 self.state.record_result(result)
                 self.state.mark_seen(trade)
