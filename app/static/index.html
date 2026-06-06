@@ -38,7 +38,7 @@
             <button class="icon-button" id="refresh-button" title="刷新面板" aria-label="刷新面板">刷</button>
             <button class="secondary-button" id="diagnose-button">诊断</button>
             <button class="secondary-button" id="discover-top-button">发现钱包</button>
-            <button class="primary-button" id="scan-button">立即扫描</button>
+            <button class="primary-button" id="scan-button">手动补查</button>
           </div>
         </header>
 
@@ -46,17 +46,22 @@
           <div class="status-card primary-status" id="status-card">
             <span class="status-kicker">当前状态</span>
             <strong id="status-title">等待连接</strong>
-            <p id="status-detail">面板加载后会显示扫描为什么没有产生跟单。</p>
+            <p id="status-detail">面板加载后会显示自动跟单为什么没有成交。</p>
+          </div>
+          <div class="status-card">
+            <span class="status-kicker">自动跟单</span>
+            <strong id="auto-status">-</strong>
+            <p id="auto-detail">服务启动后会自动轮询。</p>
           </div>
           <div class="status-card">
             <span class="status-kicker">已配置钱包</span>
             <strong id="configured-wallets">-</strong>
-            <p id="configured-wallets-detail">扫描只读取这里配置的钱包。</p>
+            <p id="configured-wallets-detail">自动检查只读取这里配置的钱包。</p>
           </div>
           <div class="status-card">
-            <span class="status-kicker">最近扫描</span>
+            <span class="status-kicker">最近检查</span>
             <strong id="scan-summary">-</strong>
-            <p id="scan-summary-detail">点击“立即扫描”后刷新。</p>
+            <p id="scan-summary-detail">自动轮询或手动补查后刷新。</p>
           </div>
           <div class="status-card">
             <span class="status-kicker">下一步</span>

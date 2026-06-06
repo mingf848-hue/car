@@ -10,7 +10,7 @@
 - 首次启动默认只做预热，不追历史单，面板会显示“首次预热”事件。
 - 跟随买入开仓，跟随卖出自动平掉该 token 的本地跟单持仓。
 - 每次 BUY 固定 `COPY_AMOUNT_USDC=5`。
-- 首页就是中文控制台：状态、风控、持仓、事件、钱包评分、手动扫描。
+- 首页就是中文控制台：自动跟单状态、风控、持仓、事件、钱包评分、手动补查。
 - “发现钱包”会从 Polymarket 体育排行榜读取候选聪明钱包；复制地址后填入 `SMART_WALLETS` 才会真正跟踪。
 - 体育市场筛选：Gamma 市场字段 -> 体育关键词 -> DeepSeek 兜底分类。
 - 下单前检查当前买入/卖出价格，超过 `MAX_SLIPPAGE_BPS` 自动跳过。
@@ -76,18 +76,20 @@ SMART_WALLETS=0x钱包1
 
 `SELL_MODE=close_full_on_leader_sell` 是当前自动跟卖规则：只要聪明钱包对某个 token 发出 SELL，本系统会检查自己是否曾经跟买并还有未平仓份额；如果有，就卖出这部分持仓。没有本地持仓时不会裸卖。
 
-## 为什么扫描不到钱包
+## 为什么没有自动跟单
 
-如果 Zeabur 已经部署成功，但页面看起来没有扫到钱包，优先按下面查：
+服务启动后会自动轮询，不需要人工点按钮。页面上的“手动补查”只是立刻额外检查一次。  
+如果 Zeabur 已经部署成功，但自动跟单没有成交，优先按下面查：
 
 1. `SMART_WALLETS` 没填或填错：控制台会出现“配置错误”。Zeabur 的 Variables 里必须填真实 Polymarket 钱包地址。
-2. “扫描”和“发现”不是一回事：扫描只看 `SMART_WALLETS`；要看别人钱包，先点“发现”，复制体育榜单钱包，再填回 Zeabur Variables。
-3. 第一次扫描是预热：默认 `COPY_HISTORICAL_ON_FIRST_RUN=false`，历史交易只记录不跟单，之后出现的新交易才会触发跟买/跟卖。页面事件里会显示“首次预热”。
+2. “自动跟单”和“发现钱包”不是一回事：自动跟单只看 `SMART_WALLETS`；要看别人钱包，先点“发现”，复制体育榜单钱包，再填回 Zeabur Variables。
+3. 第一次自动检查是预热：默认 `COPY_HISTORICAL_ON_FIRST_RUN=false`，历史交易只记录不跟单，之后出现的新交易才会触发跟买/跟卖。页面事件里会显示“首次预热”。
 4. 钱包近期没有交易：程序会显示“这个钱包近期没有读取到可跟踪交易”。换一个近期活跃的钱包，或等它有新交易。
 5. 服务器地区受限：默认 `BLOCK_ON_GEOBLOCK=true`，如果 Polymarket 判定当前服务器地区受限或只允许平仓，程序会停止开仓并在事件里显示原因。
 6. 只跟体育过滤：默认 `SPORTS_ONLY=true`，非体育市场会被跳过，事件原因会显示“不是体育市场”。
 7. 地址类型不对：如果你填的是交易所地址、非 Polymarket 活跃地址、或没有公开交易记录的地址，Polymarket 数据接口可能返回空。
 8. 数据接口不通：点击“诊断”，如果体育榜单接口失败，说明当前服务器访问 Polymarket 数据接口有问题，需要换 Zeabur 区域或等接口恢复。
+9. 自动启动没开：确认 Zeabur Variables 里 `AUTO_START=true`。默认就是 true。
 
 ## 实盘真实下单
 
@@ -115,7 +117,7 @@ DERIVE_API_KEY_IF_MISSING=true
 https://你的域名/
 ```
 
-控制台包含运行模式、固定跟单金额、自动卖出状态、持仓表、事件流水、手动扫描和钱包评分。
+控制台包含运行模式、自动跟单状态、固定跟单金额、自动卖出状态、持仓表、事件流水、手动补查和钱包评分。
 
 ### 查看状态
 
@@ -123,7 +125,7 @@ https://你的域名/
 curl https://你的域名/api/status
 ```
 
-### 手动扫描一次
+### 手动补查一次
 
 ```bash
 curl -X POST https://你的域名/scan
@@ -171,7 +173,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 - `SELL_MODE=close_full_on_leader_sell`：当前策略为聪明钱包一卖，本地该 token 跟单仓位全部平掉。
 - `COOLDOWN_SECONDS_PER_TOKEN=120`：同一 outcome token 两分钟内只跟一次 BUY；SELL 不受 BUY 冷却影响。
 - `COPY_HISTORICAL_ON_FIRST_RUN=false`：首次启动只记录已看到的旧交易，不追旧单。
-- `BLOCK_ON_GEOBLOCK=true`：启动扫描时调用官方 geoblock 检查，受限或 close-only 时不做开仓。
+- `AUTO_START=true`：服务启动后自动轮询检查钱包交易。
+- `POLL_INTERVAL_SECONDS=20`：每 20 秒自动检查一次。想更接近实时可设为 `5` 或 `10`。
+- `BLOCK_ON_GEOBLOCK=true`：自动检查时调用官方 geoblock 检查，受限或 close-only 时不做开仓。
 
 ## GitHub 自动测试
 

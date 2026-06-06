@@ -136,6 +136,7 @@ class Settings:
             "live_trading_enabled": self.live_trading_enabled,
             "smart_wallets": list(self.smart_wallets),
             "copy_amount_usdc": self.copy_amount_usdc,
+            "auto_start": self.auto_start,
             "sports_only": self.sports_only,
             "deepseek_classifier": bool(self.use_deepseek_classifier and self.deepseek_api_key),
             "poll_interval_seconds": self.poll_interval_seconds,

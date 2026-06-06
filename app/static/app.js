@@ -24,6 +24,14 @@ function formatTime(seconds) {
   return new Date(Number(seconds) * 1000).toLocaleString("zh-CN");
 }
 
+function formatRelative(seconds) {
+  if (!seconds) return "-";
+  const diff = Math.round(Number(seconds) - Date.now() / 1000);
+  if (Math.abs(diff) < 2) return "现在";
+  if (diff > 0) return `${diff} 秒后`;
+  return `${Math.abs(diff)} 秒前`;
+}
+
 function modeLabel(mode, live) {
   if (live) return "实盘交易";
   if (mode === "dry_run") return "模拟模式";
@@ -105,27 +113,35 @@ function reasonLabel(reason) {
   return labels[reason] || reason || "-";
 }
 
-function scanInsight(summary, config = {}) {
+function scanInsight(summary, config = {}, automation = {}) {
+  if (!automation.enabled) {
+    return {
+      tone: "bad",
+      title: "自动跟单未启动",
+      detail: "Zeabur Variables 里的 AUTO_START 不是 true，服务不会自动轮询。",
+      next: "开启 AUTO_START",
+    };
+  }
   if (!summary) {
     if (!config.smart_wallets?.length) {
       return {
         tone: "warn",
-        title: "还没有可扫描的钱包",
+        title: "还没有可自动跟单的钱包",
         detail: "先点“发现钱包”，复制候选地址，再到 Zeabur Variables 填入 SMART_WALLETS。",
         next: "发现钱包",
       };
     }
     return {
       tone: "idle",
-      title: "等待首次扫描",
-      detail: "点击“立即扫描”后，会读取已配置钱包的近期交易。",
-      next: "立即扫描",
+      title: "自动跟单运行中",
+      detail: `后台会每 ${automation.poll_interval_seconds || config.poll_interval_seconds || 20} 秒自动检查一次，等待首次结果。`,
+      next: "等待自动检查",
     };
   }
   if (summary.errors?.length) {
     return {
       tone: "bad",
-      title: "扫描遇到问题",
+      title: "自动检查遇到问题",
       detail: summary.errors.map(reasonLabel).join("；"),
       next: "点诊断",
     };
@@ -172,7 +188,7 @@ function scanInsight(summary, config = {}) {
   }
   return {
     tone: "ok",
-    title: "扫描完成",
+      title: "检查完成",
     detail: `本轮跟单 ${summary.copied || 0} 笔，跳过 ${summary.skipped || 0} 笔。`,
     next: "继续监控",
   };
@@ -234,20 +250,27 @@ function renderStatus(payload) {
   $("risk-slippage").textContent = `${config.max_slippage_bps || 0} 基点`;
   $("risk-daily-cap").textContent = formatUsdc(config.max_live_daily_usdc);
 
-  const insight = scanInsight(payload.last_summary, config);
+  const automation = payload.automation || {};
+  const insight = scanInsight(payload.last_summary, config, automation);
   $("status-card").className = `status-card primary-status ${insight.tone}`;
   $("status-title").textContent = insight.title;
   $("status-detail").textContent = insight.detail;
+  $("auto-status").textContent = automation.enabled
+    ? (automation.running ? "运行中" : "已开启但未运行")
+    : "未开启";
+  $("auto-detail").textContent = automation.enabled
+    ? `每 ${automation.poll_interval_seconds || config.poll_interval_seconds || 20} 秒自动检查；下次 ${formatRelative(automation.next_scan_at)}。`
+    : "设置 AUTO_START=true 后，Zeabur 启动即自动跟单。";
   $("configured-wallets").textContent = `${config.smart_wallets?.length || 0} 个`;
   $("configured-wallets-detail").textContent = config.smart_wallets?.length
-    ? `扫描会读取这些地址，每次跟买固定 ${formatUsdc(config.copy_amount_usdc || 5)}。`
-    : "现在扫描不会有结果，因为 SMART_WALLETS 为空。";
+    ? `自动检查会读取这些地址，每次跟买固定 ${formatUsdc(config.copy_amount_usdc || 5)}。`
+    : "现在不会自动跟单，因为 SMART_WALLETS 为空。";
   $("scan-summary").textContent = payload.last_summary
     ? `${payload.last_summary.copied || 0} 跟单 / ${payload.last_summary.skipped || 0} 跳过`
-    : "尚未扫描";
+    : "尚未检查";
   $("scan-summary-detail").textContent = payload.last_summary
-    ? `读取 ${payload.last_summary.fetched || 0} 条，处理 ${payload.last_summary.processed || 0} 条。`
-    : "自动轮询或手动扫描后会更新。";
+    ? `读取 ${payload.last_summary.fetched || 0} 条，处理 ${payload.last_summary.processed || 0} 条；上次 ${formatRelative(automation.last_scan_at)}。`
+    : "自动轮询或手动补查后会更新。";
   $("next-action").textContent = insight.next;
   $("next-action-detail").textContent = config.smart_wallets?.length
     ? "先看最近事件，再决定是否换钱包。"
@@ -280,7 +303,7 @@ function renderEvents(items) {
   state.events = items;
   const body = $("events-body");
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">暂无事件。点击“立即扫描”后，这里会显示扫描结果。</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="empty">暂无事件。后台自动检查或手动补查后，这里会显示结果。</td></tr>';
     return;
   }
   body.innerHTML = items
@@ -367,17 +390,17 @@ async function refreshAll() {
 async function runScan() {
   const button = $("scan-button");
   button.disabled = true;
-  button.textContent = "扫描中";
+  button.textContent = "补查中";
   try {
     const result = await api("/scan", { method: "POST" });
-    const insight = scanInsight(result, state.status?.config || {});
-    longToast(`${insight.title}：${insight.detail}`);
+    const insight = scanInsight(result, state.status?.config || {}, state.status?.automation || {});
+    longToast(`手动补查完成：${insight.title}。${insight.detail}`);
     await refreshAll();
   } catch (error) {
-    toast(`扫描失败：${error.message}`);
+    toast(`补查失败：${error.message}`);
   } finally {
     button.disabled = false;
-    button.textContent = "立即扫描";
+    button.textContent = "手动补查";
   }
 }
 

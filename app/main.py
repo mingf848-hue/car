@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -51,6 +52,10 @@ def build_runtime() -> Dict[str, Any]:
         "engine": engine,
         "last_summary": None,
         "last_error": None,
+        "last_scan_at": None,
+        "next_scan_at": None,
+        "scan_count": 0,
+        "auto_loop_running": False,
         "task": None,
     }
 
@@ -58,12 +63,18 @@ def build_runtime() -> Dict[str, Any]:
 async def scan_loop() -> None:
     settings: Settings = runtime["settings"]
     engine: CopyTradingEngine = runtime["engine"]
+    runtime["auto_loop_running"] = True
     while True:
+        runtime["next_scan_at"] = int(time.time())
         try:
             runtime["last_summary"] = await engine.run_once()
+            runtime["last_scan_at"] = int(time.time())
+            runtime["scan_count"] = int(runtime.get("scan_count") or 0) + 1
             runtime["last_error"] = None
         except Exception as exc:
-            runtime["last_error"] = str(exc)
+            runtime["last_error"] = _error_message(exc)
+            runtime["last_scan_at"] = int(time.time())
+        runtime["next_scan_at"] = int(time.time()) + settings.poll_interval_seconds
         await asyncio.sleep(settings.poll_interval_seconds)
 
 
@@ -73,6 +84,8 @@ async def startup() -> None:
     settings: Settings = runtime["settings"]
     if settings.auto_start:
         runtime["task"] = asyncio.create_task(scan_loop())
+    else:
+        runtime["auto_loop_running"] = False
 
 
 @app.on_event("shutdown")
@@ -93,6 +106,14 @@ async def api_status() -> Dict[str, Any]:
     return {
         "name": "polymarket-sports-copy-bot",
         "config": settings.redacted(),
+        "automation": {
+            "enabled": settings.auto_start,
+            "running": bool(runtime.get("task") and not runtime["task"].done()),
+            "poll_interval_seconds": settings.poll_interval_seconds,
+            "last_scan_at": runtime.get("last_scan_at"),
+            "next_scan_at": runtime.get("next_scan_at"),
+            "scan_count": runtime.get("scan_count") or 0,
+        },
         "stats": runtime["state"].stats(),
         "last_summary": runtime.get("last_summary"),
         "last_error": runtime.get("last_error"),
@@ -116,6 +137,8 @@ async def scan() -> Dict[str, Any]:
     engine: CopyTradingEngine = runtime["engine"]
     summary = await engine.run_once()
     runtime["last_summary"] = summary
+    runtime["last_scan_at"] = int(time.time())
+    runtime["scan_count"] = int(runtime.get("scan_count") or 0) + 1
     return summary
 
 

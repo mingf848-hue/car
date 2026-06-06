@@ -227,7 +227,7 @@ button:disabled {
 
 .status-strip {
   display: grid;
-  grid-template-columns: 1.35fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.25fr repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
