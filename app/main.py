@@ -30,6 +30,11 @@ class ScoreWalletsRequest(BaseModel):
     wallets: Optional[List[str]] = None
 
 
+def _error_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    return message or exc.__class__.__name__
+
+
 def build_runtime() -> Dict[str, Any]:
     settings = Settings.from_env()
     state = StateStore(settings.sqlite_path)
@@ -132,6 +137,76 @@ async def score_wallets_endpoint(payload: ScoreWalletsRequest) -> Dict[str, Any]
     public: PolymarketPublicClient = runtime["public"]
     wallets = payload.wallets or list(settings.smart_wallets)
     return {"wallets": await score_wallets(settings, public, wallets)}
+
+
+@app.get("/leaderboard")
+async def leaderboard(
+    category: str = "SPORTS",
+    time_period: str = "WEEK",
+    order_by: str = "PNL",
+    limit: int = 25,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    public: PolymarketPublicClient = runtime["public"]
+    items = await public.fetch_leaderboard(
+        category=category,
+        time_period=time_period,
+        order_by=order_by,
+        limit=limit,
+        offset=offset,
+    )
+    return {"wallets": items}
+
+
+@app.get("/diagnostics")
+async def diagnostics() -> Dict[str, Any]:
+    settings: Settings = runtime["settings"]
+    public: PolymarketPublicClient = runtime["public"]
+    result: Dict[str, Any] = {
+        "configured_wallets": len(settings.smart_wallets),
+        "copy_amount_usdc": settings.copy_amount_usdc,
+        "execution_mode": settings.execution_mode,
+        "checks": {},
+    }
+
+    try:
+        geoblock = await public.geoblock()
+        result["checks"]["geoblock"] = {"ok": True, "payload": geoblock}
+    except Exception as exc:
+        result["checks"]["geoblock"] = {"ok": False, "error": _error_message(exc)}
+
+    try:
+        leaders = await public.fetch_leaderboard(category="SPORTS", time_period="WEEK", order_by="PNL", limit=3)
+        result["checks"]["sports_leaderboard"] = {
+            "ok": True,
+            "count": len(leaders),
+            "sample_wallets": [item.get("proxyWallet") for item in leaders if item.get("proxyWallet")],
+        }
+    except Exception as exc:
+        result["checks"]["sports_leaderboard"] = {"ok": False, "error": _error_message(exc)}
+
+    if settings.smart_wallets:
+        wallet = settings.smart_wallets[0]
+        try:
+            trades = await public.fetch_wallet_trades(wallet, min(settings.activity_limit, 10))
+            result["checks"]["first_wallet_activity"] = {
+                "ok": True,
+                "wallet": wallet,
+                "raw_count": len(trades),
+            }
+        except Exception as exc:
+            result["checks"]["first_wallet_activity"] = {
+                "ok": False,
+                "wallet": wallet,
+                "error": _error_message(exc),
+            }
+    else:
+        result["checks"]["first_wallet_activity"] = {
+            "ok": False,
+            "error": "未配置 SMART_WALLETS",
+        }
+
+    return result
 
 
 if __name__ == "__main__":

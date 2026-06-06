@@ -406,9 +406,35 @@ dd {
   overflow-wrap: anywhere;
 }
 
+.score-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .score-row span {
   color: var(--blue);
   font-weight: 800;
+}
+
+.score-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: right;
+}
+
+.mini-button {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .toast {
@@ -493,6 +519,13 @@ dd {
 
   .primary-button {
     flex: 1;
+  }
+
+  .leaderboard-row,
+  .score-actions {
+    align-items: stretch;
+    flex-direction: column;
+    text-align: left;
   }
 
   .side-status {

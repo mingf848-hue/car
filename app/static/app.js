@@ -113,6 +113,14 @@ function toast(message) {
   toast.timer = window.setTimeout(() => el.classList.remove("show"), 2800);
 }
 
+function longToast(message) {
+  const el = $("toast");
+  el.textContent = message;
+  el.classList.add("show");
+  window.clearTimeout(toast.timer);
+  toast.timer = window.setTimeout(() => el.classList.remove("show"), 7000);
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -213,6 +221,36 @@ function renderScores(items) {
     .join("");
 }
 
+function shortWallet(wallet) {
+  const text = String(wallet || "");
+  if (text.length <= 14) return text || "-";
+  return `${text.slice(0, 8)}...${text.slice(-6)}`;
+}
+
+function renderLeaderboard(items) {
+  const list = $("leaderboard-list");
+  if (!items.length) {
+    list.innerHTML = '<div class="empty-block">没有返回体育榜单钱包。稍后再试，或检查服务器是否能访问 Polymarket 数据接口。</div>';
+    return;
+  }
+  list.innerHTML = items
+    .map((item) => {
+      const wallet = item.proxyWallet || item.proxy_wallet || item.wallet || "";
+      const name = item.userName || item.username || "未命名钱包";
+      return `<div class="score-row leaderboard-row">
+        <div>
+          <strong>${escapeHtml(name)}</strong>
+          <small>第 ${escapeHtml(item.rank || "-")} 名 · ${escapeHtml(shortWallet(wallet))}</small>
+        </div>
+        <div class="score-actions">
+          <span>${formatUsdc(item.pnl)} / ${formatUsdc(item.vol)}</span>
+          <button class="mini-button" data-wallet="${escapeHtml(wallet)}">复制</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -268,10 +306,63 @@ async function scoreWallets() {
   }
 }
 
+async function discoverWallets() {
+  const button = $("discover-button");
+  button.disabled = true;
+  button.textContent = "发现中";
+  try {
+    const result = await api("/leaderboard?category=SPORTS&time_period=WEEK&order_by=PNL&limit=25");
+    renderLeaderboard(result.wallets || []);
+    toast("体育榜单钱包已加载");
+  } catch (error) {
+    toast(`发现失败：${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "发现";
+  }
+}
+
+async function copyWallet(wallet) {
+  if (!wallet) return;
+  await navigator.clipboard.writeText(wallet);
+  toast("钱包地址已复制");
+}
+
+async function diagnose() {
+  const button = $("diagnose-button");
+  button.disabled = true;
+  button.textContent = "诊断中";
+  try {
+    const result = await api("/diagnostics");
+    const checks = result.checks || {};
+    const walletText = result.configured_wallets
+      ? `已配置 ${result.configured_wallets} 个钱包`
+      : "未配置 SMART_WALLETS";
+    const leaderboardText = checks.sports_leaderboard?.ok
+      ? `体育榜单接口正常，返回 ${checks.sports_leaderboard.count} 个样例`
+      : `体育榜单接口失败：${checks.sports_leaderboard?.error || "未知错误"}`;
+    const activityText = checks.first_wallet_activity?.ok
+      ? `第一个钱包读取到 ${checks.first_wallet_activity.raw_count} 条近期记录`
+      : `钱包活动读取失败：${checks.first_wallet_activity?.error || "未知错误"}`;
+    longToast(`${walletText}。${leaderboardText}。${activityText}。`);
+  } catch (error) {
+    longToast(`诊断失败：${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "诊断";
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   $("refresh-button").addEventListener("click", () => refreshAll().catch((error) => toast(error.message)));
   $("scan-button").addEventListener("click", runScan);
+  $("diagnose-button").addEventListener("click", diagnose);
   $("score-button").addEventListener("click", scoreWallets);
+  $("discover-button").addEventListener("click", discoverWallets);
+  $("leaderboard-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-wallet]");
+    if (button) copyWallet(button.dataset.wallet).catch((error) => toast(`复制失败：${error.message}`));
+  });
   $("include-closed").addEventListener("change", () => refreshAll().catch((error) => toast(error.message)));
 
   refreshAll().catch((error) => toast(`加载失败：${error.message}`));

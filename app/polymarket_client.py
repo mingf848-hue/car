@@ -30,6 +30,27 @@ class PolymarketPublicClient:
                 return activity
             return await self._fetch_trades(client, wallet, limit)
 
+    async def fetch_leaderboard(
+        self,
+        category: str = "SPORTS",
+        time_period: str = "WEEK",
+        order_by: str = "PNL",
+        limit: int = 25,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        url = self.settings.data_api_host.rstrip("/") + "/v1/leaderboard"
+        params = {
+            "category": category.upper(),
+            "timePeriod": time_period.upper(),
+            "orderBy": order_by.upper(),
+            "limit": max(1, min(int(limit), 50)),
+            "offset": max(0, int(offset)),
+        }
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            return _extract_list(response.json())
+
     async def _fetch_activity(self, client: httpx.AsyncClient, wallet: str, limit: int) -> List[Dict[str, Any]]:
         url = self.settings.data_api_host.rstrip("/") + "/activity"
         base_params = {
