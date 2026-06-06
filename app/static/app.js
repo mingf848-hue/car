@@ -5,6 +5,7 @@ const appState = {
   selectedWallet: "",
   selectedLabel: "",
   selectedTrades: [],
+  tradeFilter: "ALL",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -92,6 +93,17 @@ function actionText(action) {
     config_error: "配置",
   };
   return labels[action] || action || "-";
+}
+
+function tradeSideKey(side) {
+  return side === "BUY" || side === "SELL" ? side : "UNKNOWN";
+}
+
+function tradeSideText(side) {
+  const key = tradeSideKey(side);
+  if (key === "BUY") return "买入";
+  if (key === "SELL") return "卖出";
+  return "未识别";
 }
 
 function insight(status) {
@@ -199,24 +211,33 @@ function renderDetail() {
   }
   const buys = appState.selectedTrades.filter((item) => item.side === "BUY").length;
   const sells = appState.selectedTrades.filter((item) => item.side === "SELL").length;
+  const unknown = appState.selectedTrades.filter((item) => tradeSideKey(item.side) === "UNKNOWN").length;
   const total = appState.selectedTrades.reduce((sum, item) => sum + Number(item.usdc_size || 0), 0);
   $("detail-summary").innerHTML = `
     <div><span>近期交易</span><strong>${appState.selectedTrades.length}</strong></div>
-    <div><span>买入 / 卖出</span><strong>${buys} / ${sells}</strong></div>
+    <div><span>买入 / 卖出 / 未识别</span><strong>${buys} / ${sells} / ${unknown}</strong></div>
     <div><span>名义金额</span><strong>${usdc(total)}</strong></div>
   `;
-  if (!appState.selectedTrades.length) {
+  const filteredTrades = appState.selectedTrades.filter((item) => {
+    if (appState.tradeFilter === "ALL") return true;
+    return tradeSideKey(item.side) === appState.tradeFilter;
+  });
+  if (!filteredTrades.length) {
+    const filterText = appState.tradeFilter === "ALL" ? "近期下注" : tradeSideText(appState.tradeFilter);
     $("trade-list").innerHTML = `<div class="empty-state"><strong>没有读取到近期下注</strong><p>这个钱包可能近期不活跃，或数据接口没有返回公开交易。</p></div>`;
+    if (appState.selectedTrades.length) {
+      $("trade-list").innerHTML = `<div class="empty-state"><strong>没有${escapeHtml(filterText)}记录</strong><p>Polymarket 本次返回的近期交易里没有这一类方向。</p></div>`;
+    }
     return;
   }
-  $("trade-list").innerHTML = appState.selectedTrades
+  $("trade-list").innerHTML = filteredTrades
     .map((trade) => `<div class="trade-row">
       <div>
         <strong>${escapeHtml(trade.market_title || trade.market_slug || "未知市场")}</strong>
-        <span>${escapeHtml(trade.outcome || "-")} · ${timeText(trade.timestamp)}</span>
+        <span>${escapeHtml(trade.outcome || "-")} · ${timeText(trade.timestamp)} · 原始方向 ${escapeHtml(trade.raw_side || trade.side || "-")}</span>
       </div>
       <div class="trade-numbers">
-        <b class="${trade.side === "BUY" ? "buy" : "sell"}">${trade.side === "BUY" ? "买入" : "卖出"}</b>
+        <b class="${tradeSideKey(trade.side).toLowerCase()}">${tradeSideText(trade.side)}</b>
         <span>${usdc(trade.usdc_size)} · ${number(trade.size, 4)} 份 · ${Number(trade.price || 0).toFixed(4)}</span>
       </div>
     </div>`)
@@ -381,6 +402,15 @@ function bindEvents() {
       button.classList.add("active");
       document.getElementById(button.dataset.section)?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  });
+
+  $("trade-filter").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-filter]");
+    if (!button) return;
+    appState.tradeFilter = button.dataset.filter;
+    document.querySelectorAll("#trade-filter button").forEach((item) => item.classList.remove("active"));
+    button.classList.add("active");
+    renderDetail();
   });
 }
 

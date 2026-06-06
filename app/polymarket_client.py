@@ -18,6 +18,32 @@ def _extract_list(payload: Any) -> List[Dict[str, Any]]:
     return []
 
 
+def _trade_key(item: Dict[str, Any]) -> str:
+    parts = [
+        str(item.get("transactionHash") or item.get("transaction_hash") or item.get("txHash") or item.get("hash") or ""),
+        str(item.get("asset") or item.get("token_id") or item.get("tokenId") or ""),
+        str(item.get("side") or item.get("tradeSide") or ""),
+        str(item.get("timestamp") or item.get("time") or item.get("createdAt") or ""),
+        str(item.get("price") or item.get("avgPrice") or ""),
+        str(item.get("size") or item.get("amount") or ""),
+        str(item.get("slug") or item.get("marketSlug") or item.get("eventSlug") or ""),
+        str(item.get("outcome") or item.get("outcomeName") or ""),
+    ]
+    return "|".join(parts)
+
+
+def _dedupe_trades(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    unique = []
+    for item in items:
+        key = _trade_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return sorted(unique, key=lambda item: float(item.get("timestamp") or item.get("time") or 0), reverse=True)
+
+
 class PolymarketPublicClient:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -25,10 +51,22 @@ class PolymarketPublicClient:
 
     async def fetch_wallet_trades(self, wallet: str, limit: int) -> List[Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=20) as client:
-            activity = await self._fetch_activity(client, wallet, limit)
+            activity = []
+            for side in ("BUY", "SELL"):
+                activity.extend(await self._fetch_activity(client, wallet, limit, side=side))
             if activity:
-                return activity
-            return await self._fetch_trades(client, wallet, limit)
+                return _dedupe_trades(activity)[:limit]
+
+            unsided_activity = await self._fetch_activity(client, wallet, limit, side=None)
+            if unsided_activity:
+                return _dedupe_trades(unsided_activity)[:limit]
+
+            trades = []
+            for side in ("BUY", "SELL"):
+                trades.extend(await self._fetch_trades(client, wallet, limit, side=side))
+            if trades:
+                return _dedupe_trades(trades)[:limit]
+            return await self._fetch_trades(client, wallet, limit, side=None)
 
     async def fetch_leaderboard(
         self,
@@ -51,7 +89,13 @@ class PolymarketPublicClient:
             response.raise_for_status()
             return _extract_list(response.json())
 
-    async def _fetch_activity(self, client: httpx.AsyncClient, wallet: str, limit: int) -> List[Dict[str, Any]]:
+    async def _fetch_activity(
+        self,
+        client: httpx.AsyncClient,
+        wallet: str,
+        limit: int,
+        side: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         url = self.settings.data_api_host.rstrip("/") + "/activity"
         base_params = {
             "user": wallet,
@@ -63,6 +107,8 @@ class PolymarketPublicClient:
         for type_value in ("TRADE", ["TRADE"]):
             params = dict(base_params)
             params["type"] = type_value
+            if side:
+                params["side"] = side
             try:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
@@ -73,7 +119,13 @@ class PolymarketPublicClient:
                 continue
         return []
 
-    async def _fetch_trades(self, client: httpx.AsyncClient, wallet: str, limit: int) -> List[Dict[str, Any]]:
+    async def _fetch_trades(
+        self,
+        client: httpx.AsyncClient,
+        wallet: str,
+        limit: int,
+        side: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         url = self.settings.data_api_host.rstrip("/") + "/trades"
         params = {
             "user": wallet,
@@ -81,6 +133,8 @@ class PolymarketPublicClient:
             "offset": 0,
             "takerOnly": "false",
         }
+        if side:
+            params["side"] = side
         response = await client.get(url, params=params)
         response.raise_for_status()
         return _extract_list(response.json())

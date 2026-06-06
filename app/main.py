@@ -87,6 +87,7 @@ def _trade_payload(wallet: str, raw: Dict[str, Any]) -> Dict[str, Any]:
         "trade_id": trade.trade_id,
         "timestamp": trade.timestamp,
         "side": trade.side,
+        "raw_side": raw.get("side") or raw.get("tradeSide") or raw.get("trade_side") or raw.get("takerSide") or raw.get("makerSide") or "",
         "token_id": trade.token_id,
         "market_slug": trade.market_slug,
         "market_title": trade.market_title,
@@ -243,12 +244,13 @@ async def wallet_trades(wallet: str, limit: int = 30) -> Dict[str, Any]:
             "wallet": wallet,
             "error": _error_message(exc),
             "trades": [],
-            "summary": {"count": 0, "buys": 0, "sells": 0, "total_usdc": 0},
+            "summary": {"count": 0, "buys": 0, "sells": 0, "unknown": 0, "total_usdc": 0},
         }
     trades = [_trade_payload(wallet, raw) for raw in raw_trades]
     total_usdc = round(sum(item["usdc_size"] for item in trades), 2)
     buys = sum(1 for item in trades if item["side"] == "BUY")
     sells = sum(1 for item in trades if item["side"] == "SELL")
+    unknown = len(trades) - buys - sells
     return {
         "ok": True,
         "wallet": wallet,
@@ -257,6 +259,7 @@ async def wallet_trades(wallet: str, limit: int = 30) -> Dict[str, Any]:
             "count": len(trades),
             "buys": buys,
             "sells": sells,
+            "unknown": unknown,
             "total_usdc": total_usdc,
         },
     }

@@ -220,8 +220,8 @@ button:disabled {
   grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1fr) minmax(420px, 1.35fr);
   grid-template-areas:
     "followed discover detail"
-    "positions discover detail"
-    "events events detail";
+    "positions positions detail"
+    "events events events";
   gap: 14px;
   align-items: start;
 }
@@ -262,6 +262,35 @@ button:disabled {
   font-size: 13px;
 }
 
+.segmented {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-3);
+  overflow-x: auto;
+}
+
+.segmented button {
+  flex: 1;
+  min-width: max-content;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.segmented button.active {
+  border-color: var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
 .wallet-list,
 .candidate-list,
 .trade-list,
@@ -269,6 +298,10 @@ button:disabled {
 .event-list {
   display: grid;
   gap: 10px;
+}
+
+.positions-panel .compact-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .wallet-row,
@@ -418,6 +451,10 @@ button:disabled {
   color: var(--amber);
 }
 
+.unknown {
+  color: var(--blue);
+}
+
 .compact-row {
   padding: 12px;
 }
@@ -499,7 +536,8 @@ button:disabled {
     grid-template-areas:
       "followed discover"
       "detail detail"
-      "positions events";
+      "positions positions"
+      "events events";
   }
 
 }
@@ -544,6 +582,10 @@ button:disabled {
       "detail"
       "positions"
       "events";
+  }
+
+  .positions-panel .compact-list {
+    grid-template-columns: 1fr;
   }
 
   .trade-numbers {

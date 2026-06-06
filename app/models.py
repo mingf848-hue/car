@@ -51,7 +51,18 @@ class WalletTrade:
 
     @classmethod
     def from_activity(cls, wallet: str, raw: Dict[str, Any]) -> "WalletTrade":
-        side = str(_first(raw, "side", "tradeSide", "type", default="")).upper()
+        side = str(
+            _first(
+                raw,
+                "side",
+                "tradeSide",
+                "trade_side",
+                "takerSide",
+                "makerSide",
+                "type",
+                default="",
+            )
+        ).upper()
         if side not in {"BUY", "SELL"}:
             side = "BUY" if "buy" in side.lower() else ("SELL" if "sell" in side.lower() else side)
 
