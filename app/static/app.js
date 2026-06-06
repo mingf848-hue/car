@@ -1,40 +1,62 @@
 const appState = {
   status: null,
+  portfolio: null,
   wallets: [],
-  candidates: [],
+  recommendations: [],
   selectedWallet: "",
   selectedLabel: "",
   selectedTrades: [],
   tradeFilter: "ALL",
   detailLoading: false,
   detailError: "",
+  activeScreen: "home",
+  aiLoading: false,
+  aiError: "",
+  aiMode: "rules",
 };
 
 const $ = (id) => document.getElementById(id);
 
 function usdc(value) {
-  return `$${Number(value || 0).toFixed(2)}`;
+  const num = Number(value || 0);
+  const sign = num < 0 ? "-" : "";
+  return `${sign}$${Math.abs(num).toFixed(2)}`;
 }
 
 function number(value, digits = 2) {
   return Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: digits });
 }
 
+function pct(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
 function timeText(seconds) {
   if (!seconds) return "-";
-  return new Date(Number(seconds) * 1000).toLocaleString("zh-CN");
+  return new Date(Number(seconds) * 1000).toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function relative(seconds) {
   if (!seconds) return "-";
   const diff = Math.round(Number(seconds) - Date.now() / 1000);
   if (Math.abs(diff) < 2) return "现在";
-  return diff > 0 ? `${diff} 秒后` : `${Math.abs(diff)} 秒前`;
+  if (Math.abs(diff) < 60) return diff > 0 ? `${diff} 秒后` : `${Math.abs(diff)} 秒前`;
+  const minutes = Math.round(Math.abs(diff) / 60);
+  if (minutes < 60) return diff > 0 ? `${minutes} 分钟后` : `${minutes} 分钟前`;
+  const hours = Math.round(minutes / 60);
+  return diff > 0 ? `${hours} 小时后` : `${hours} 小时前`;
 }
 
 function shortWallet(wallet) {
   const text = String(wallet || "");
-  return text.length > 16 ? `${text.slice(0, 8)}...${text.slice(-6)}` : text || "-";
+  return text.length > 16 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text || "-";
 }
 
 function escapeHtml(value) {
@@ -63,6 +85,24 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function validWalletAddress(wallet) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(wallet || "").trim());
+}
+
+function actionText(action) {
+  const labels = {
+    dry_run_buy: "模拟买入",
+    live_buy: "实盘买入",
+    dry_run_sell: "模拟卖出",
+    live_sell: "实盘卖出",
+    skip: "跳过",
+    blocked: "阻止",
+    warmup: "预热",
+    config_error: "配置",
+  };
+  return labels[action] || action || "-";
+}
+
 function reasonText(reason) {
   if (!reason) return "-";
   if (/^copied_fixed_([0-9.]+)_usdc$/.test(reason)) {
@@ -79,22 +119,18 @@ function reasonText(reason) {
     leader_trade_too_small: "聪明钱包交易金额太小",
     price_check_failed: "价格检查失败",
     auto_follow_sells_disabled: "自动跟卖关闭",
+    daily_live_limit_reached: "达到每日实盘上限",
   };
   return labels[reason] || reason;
 }
 
-function actionText(action) {
+function sourceText(source) {
   const labels = {
-    dry_run_buy: "模拟跟买",
-    live_buy: "实盘跟买",
-    dry_run_sell: "模拟跟卖",
-    live_sell: "实盘跟卖",
-    skip: "跳过",
-    blocked: "阻止",
-    warmup: "预热",
-    config_error: "配置",
+    leaderboard: "AI 推荐",
+    manual: "手动添加",
+    ui: "页面选择",
   };
-  return labels[action] || action || "-";
+  return labels[source] || source || "页面选择";
 }
 
 function tradeSideKey(side) {
@@ -108,133 +144,168 @@ function tradeSideText(side) {
   return "未识别";
 }
 
-function sourceText(source) {
-  const labels = {
-    leaderboard: "候选池",
-    manual: "手动添加",
-    ui: "页面选择",
-  };
-  return labels[source] || source || "页面选择";
+function switchScreen(screen) {
+  appState.activeScreen = screen;
+  document.querySelectorAll(".screen").forEach((item) => item.classList.toggle("active", item.dataset.screen === screen));
+  document.querySelectorAll(".bottom-nav button").forEach((item) => item.classList.toggle("active", item.dataset.nav === screen));
 }
 
-function validWalletAddress(wallet) {
-  return /^0x[a-fA-F0-9]{40}$/.test(String(wallet || "").trim());
-}
-
-function insight(status) {
-  const config = status?.config || {};
-  const automation = status?.automation || {};
-  const summary = status?.last_summary;
-  if (!automation.enabled) return ["bad", "自动跟单未开启", "设置 AUTO_START=true 后重启服务。"];
-  if (!automation.running) return ["bad", "自动任务未运行", "服务已启动但后台轮询任务没有运行。"];
-  if (!config.effective_wallets?.length) return ["warn", "等待选择钱包", "从候选钱包查看下注详情，然后点“跟单此钱包”。"];
-  if (!summary) return ["idle", "自动跟单运行中", `每 ${automation.poll_interval_seconds || 20} 秒检查一次。`];
-  if (summary.errors?.length) return ["bad", "自动检查有问题", summary.errors.map(reasonText).join("；")];
-  if (summary.warmup_wallets) return ["ok", "预热完成", "历史交易已记录，之后的新交易才会触发跟单。"];
-  if (summary.processed === 0) return ["idle", "等待新交易", `最近读取 ${summary.fetched || 0} 条，没有未处理的新交易。`];
-  if (!summary.copied && summary.skipped) return ["warn", "本轮全部跳过", "查看事件流水里的具体原因。"];
-  return ["ok", "自动跟单正常", `跟单 ${summary.copied || 0} 笔，跳过 ${summary.skipped || 0} 笔。`];
-}
-
-function executionWalletStatus(config) {
-  const wallet = config.execution_wallet || {};
-  if (config.execution_mode !== "live") {
-    return ["模拟模式", "当前不会真实下单。"];
-  }
-  if (!wallet.private_key_configured) {
-    return ["未接入", "Zeabur 还没有配置实盘私钥。"];
-  }
-  if (!config.live_trading_enabled) {
-    return ["待确认", "实盘模式还没有确认风险开关。"];
-  }
-  if (!wallet.clob_credentials_configured && !wallet.derive_api_key_if_missing) {
-    return ["待补充", "缺少 CLOB 凭证或派生开关。"];
-  }
-  return ["已接入", wallet.clob_credentials_configured ? "实盘 CLOB 凭证已配置。" : "实盘私钥已配置，将尝试派生 CLOB 凭证。"];
-}
-
-function renderStatus() {
+function statusTone() {
   const status = appState.status || {};
   const config = status.config || {};
   const automation = status.automation || {};
-  const [tone, title, detail] = insight(status);
-  const [walletTitle, walletDetail] = executionWalletStatus(config);
-  $("state-card").className = `ops-card main-state ${tone}`;
-  $("state-title").textContent = title;
-  $("state-detail").textContent = detail;
-  $("system-line").textContent = automation.running
-    ? `自动轮询运行中，下次检查 ${relative(automation.next_scan_at)}`
-    : "自动轮询未运行，请检查 Zeabur Variables";
-  $("active-wallet-count").textContent = `${config.effective_wallets?.length || 0} 个`;
-  $("active-wallet-detail").textContent = config.effective_wallets?.length
-    ? "这些钱包的新交易会被自动检查。"
-    : "还没有选择任何跟单钱包。";
-  $("copy-size").textContent = usdc(config.copy_amount_usdc || 5);
-  $("execution-wallet-title").textContent = walletTitle;
-  $("execution-wallet-detail").textContent = walletDetail;
-  $("last-check").textContent = automation.last_scan_at ? relative(automation.last_scan_at) : "尚未检查";
-  $("next-check").textContent = `间隔 ${automation.poll_interval_seconds || config.poll_interval_seconds || 20} 秒；累计 ${automation.scan_count || 0} 次。`;
+  if (!automation.enabled || !automation.running) return ["离线", "自动轮询未运行"];
+  if (!config.effective_wallets?.length) return ["待选择", "添加钱包后自动检查新交易"];
+  if (status.last_summary?.errors?.length) return ["告警", status.last_summary.errors.map(reasonText).join("；")];
+  if (status.last_summary?.warmup_wallets) return ["预热", "历史交易已记录，新交易才会跟单"];
+  return ["运行中", `下次检查 ${relative(automation.next_scan_at)}`];
 }
 
-function walletRow(wallet) {
+function renderHeader() {
+  const status = appState.status || {};
+  const config = status.config || {};
+  const portfolio = appState.portfolio || {};
+  const perf = portfolio.performance || {};
+  const balance = portfolio.balance || {};
+  const [mode, detail] = statusTone();
+  $("mode-pill").textContent = mode;
+  $("state-detail").textContent = detail;
+  $("net-pnl").textContent = usdc(perf.net_cash_flow || 0);
+  $("net-pnl").style.color = Number(perf.net_cash_flow || 0) >= 0 ? "var(--green)" : "var(--red)";
+  $("balance-value").textContent = balance.available_usdc == null ? "--" : usdc(balance.available_usdc);
+  $("balance-label").textContent = balance.label || "未接入";
+  $("buy-total").textContent = usdc(perf.buy_usdc || 0);
+  $("copy-size").textContent = `每单 ${usdc(config.copy_amount_usdc || 5)}`;
+  $("position-count").textContent = String(perf.open_positions || 0);
+  $("open-cost").textContent = `${usdc(perf.open_cost || 0)} 成本`;
+  $("active-wallet-detail").textContent = config.effective_wallets?.length
+    ? `${config.effective_wallets.length} 个钱包正在自动跟单`
+    : "还没有选择钱包。";
+}
+
+function emptyState(title, detail) {
+  return `<div class="empty-state"><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></div>`;
+}
+
+function recommendationCard(item, compact = false) {
+  const followed = appState.wallets.some((wallet) => wallet.wallet.toLowerCase() === item.wallet.toLowerCase());
+  const tradesLabel = `${item.trades || 0} 笔`;
+  return `<article class="recommend-card" data-wallet="${escapeHtml(item.wallet)}">
+    <div class="card-top">
+      <div>
+        <h3>${escapeHtml(item.label || shortWallet(item.wallet))}</h3>
+        <small>${escapeHtml(shortWallet(item.wallet))} · ${escapeHtml(item.ai_label || "AI 推荐")}</small>
+      </div>
+      <div class="score-ring">${number(item.score, 0)}</div>
+    </div>
+    <p>${escapeHtml(item.ai_reason || "正在生成推荐理由。")}</p>
+    <div class="metric-row">
+      <div class="metric-pill"><span>盈利</span><strong>${usdc(item.leaderboard_pnl)}</strong></div>
+      <div class="metric-pill"><span>体育占比</span><strong>${pct(item.sports_ratio)}</strong></div>
+      <div class="metric-pill"><span>近期</span><strong>${tradesLabel}</strong></div>
+    </div>
+    ${compact ? "" : `<p>风险：${escapeHtml(item.risk || "注意滑点和集中交易。")}</p>`}
+    <div class="card-actions">
+      <button class="card-action" data-action="inspect-recommendation" data-wallet="${escapeHtml(item.wallet)}" data-label="${escapeHtml(item.label || "")}">看下注</button>
+      <button class="card-action primary" data-action="follow-recommendation" data-wallet="${escapeHtml(item.wallet)}" data-label="${escapeHtml(item.label || "")}" ${followed ? "disabled" : ""}>${followed ? "已跟单" : "跟单"}</button>
+    </div>
+  </article>`;
+}
+
+function renderRecommendations() {
+  const aiSourceText = appState.aiMode === "deepseek" ? "DeepSeek AI" : "规则评分";
+  const aiText = appState.aiLoading
+    ? "AI 正在分析排行榜钱包。"
+    : appState.aiError
+      ? `推荐失败：${appState.aiError}`
+      : appState.recommendations.length
+        ? `${aiSourceText}已筛出 ${appState.recommendations.length} 个候选。`
+        : "点击刷新读取排行榜。";
+  $("ai-mode").textContent = aiText;
+  const home = $("home-recommendations");
+  const list = $("recommendation-list");
+  if (appState.aiLoading) {
+    const loading = emptyState("正在分析钱包", "读取排行榜、近期下注和盈利数据。");
+    home.innerHTML = loading;
+    list.innerHTML = loading;
+    return;
+  }
+  if (appState.aiError) {
+    const error = emptyState("AI 推荐不可用", appState.aiError);
+    home.innerHTML = error;
+    list.innerHTML = error;
+    return;
+  }
+  if (!appState.recommendations.length) {
+    const empty = emptyState("暂无推荐", "点击重新分析，读取体育排行榜钱包。");
+    home.innerHTML = empty;
+    list.innerHTML = empty;
+    return;
+  }
+  home.innerHTML = appState.recommendations.slice(0, 5).map((item) => recommendationCard(item, true)).join("");
+  list.innerHTML = appState.recommendations.map((item) => recommendationCard(item)).join("");
+}
+
+function walletCard(wallet) {
   const active = Boolean(wallet.active);
   const selected = wallet.wallet.toLowerCase() === appState.selectedWallet.toLowerCase();
-  return `<div class="wallet-row ${active ? "active" : "paused"} ${selected ? "selected" : ""}" data-wallet="${escapeHtml(wallet.wallet)}">
-    <button class="wallet-main" data-action="select" data-wallet="${escapeHtml(wallet.wallet)}">
-      <strong>${escapeHtml(wallet.label || shortWallet(wallet.wallet))}</strong>
-      <span>${escapeHtml(shortWallet(wallet.wallet))} · ${escapeHtml(sourceText(wallet.source))}</span>
-    </button>
-    <div class="wallet-actions">
-      <button class="mini-button" data-action="${active ? "pause" : "resume"}" data-wallet="${escapeHtml(wallet.wallet)}">
-        ${active ? "暂停" : "恢复"}
-      </button>
-      <button class="mini-button danger" data-action="delete-wallet" data-wallet="${escapeHtml(wallet.wallet)}">删除</button>
+  return `<article class="wallet-card ${selected ? "selected" : ""}">
+    <div class="wallet-line">
+      <div>
+        <h3>${escapeHtml(wallet.label || shortWallet(wallet.wallet))}</h3>
+        <small>${escapeHtml(shortWallet(wallet.wallet))} · ${escapeHtml(sourceText(wallet.source))}</small>
+      </div>
+      <span class="status-pill">${active ? "运行" : "暂停"}</span>
     </div>
-  </div>`;
+    <div class="wallet-actions">
+      <button class="card-action" data-action="select-wallet" data-wallet="${escapeHtml(wallet.wallet)}" data-label="${escapeHtml(wallet.label || "")}">看下注</button>
+      <button class="card-action" data-action="${active ? "pause" : "resume"}" data-wallet="${escapeHtml(wallet.wallet)}">${active ? "暂停" : "恢复"}</button>
+      <button class="card-action danger" data-action="delete-wallet" data-wallet="${escapeHtml(wallet.wallet)}">删除</button>
+    </div>
+  </article>`;
 }
 
 function renderWallets() {
   const list = $("followed-wallets");
   if (!appState.wallets.length) {
-    list.innerHTML = `<div class="empty-state">
-      <strong>还没有跟单钱包</strong>
-      <p>粘贴钱包地址添加，或在候选区点“跟单”。</p>
-    </div>`;
+    list.innerHTML = emptyState("还没有跟单钱包", "从 AI 推荐点跟单，或手动粘贴 0x 地址。");
     return;
   }
-  list.innerHTML = appState.wallets.map(walletRow).join("");
+  list.innerHTML = appState.wallets.map(walletCard).join("");
 }
 
-function renderCandidates() {
-  const list = $("candidate-wallets");
-  if (!appState.candidates.length) {
-    list.innerHTML = `<div class="empty-state">
-      <strong>候选池为空</strong>
-      <p>点击“加载候选”读取体育排行榜钱包。</p>
-    </div>`;
+function renderPositions() {
+  const list = $("positions-list");
+  const positions = appState.portfolio?.positions || [];
+  if (!positions.length) {
+    list.innerHTML = emptyState("暂无持仓", "跟买成功后会在这里显示市场、方向和成本。");
     return;
   }
-  const followed = new Set(appState.wallets.filter((item) => item.active).map((item) => item.wallet.toLowerCase()));
-  list.innerHTML = appState.candidates
-    .map((item) => {
-      const wallet = item.proxyWallet || item.proxy_wallet || item.wallet || "";
-      const selected = wallet.toLowerCase() === appState.selectedWallet.toLowerCase();
-      return `<div class="candidate-card ${selected ? "selected" : ""}">
-        <button class="candidate-main" data-action="select-candidate" data-wallet="${escapeHtml(wallet)}" data-label="${escapeHtml(item.userName || item.username || "")}">
-          <span class="rank">#${escapeHtml(item.rank || "-")}</span>
-          <strong>${escapeHtml(item.userName || item.username || "未命名钱包")}</strong>
-          <small>${escapeHtml(shortWallet(wallet))}</small>
-        </button>
-        <div class="candidate-metrics">
-          <span>盈亏 ${usdc(item.pnl)}</span>
-          <span>成交 ${usdc(item.vol)}</span>
-        </div>
-        <button class="secondary-button" data-action="follow-candidate" data-wallet="${escapeHtml(wallet)}" data-label="${escapeHtml(item.userName || item.username || "")}" ${followed.has(wallet.toLowerCase()) ? "disabled" : ""}>
-          ${followed.has(wallet.toLowerCase()) ? "已跟单" : "跟单"}
-        </button>
-      </div>`;
-    })
-    .join("");
+  list.innerHTML = positions.slice(0, 6).map((item) => `<article class="position-card">
+    <h3>${escapeHtml(item.market_slug || item.token_id)}</h3>
+    <p>${escapeHtml(item.outcome || "-")} · ${number(item.open_shares, 4)} 份</p>
+    <div class="metric-row">
+      <div class="metric-pill"><span>买入</span><strong>${usdc(item.total_buy_usdc)}</strong></div>
+      <div class="metric-pill"><span>卖出</span><strong>${usdc(item.total_sell_usdc)}</strong></div>
+      <div class="metric-pill"><span>均价</span><strong>${number(item.avg_entry_price, 4)}</strong></div>
+    </div>
+  </article>`).join("");
+}
+
+function renderEvents(items) {
+  const list = $("events-list");
+  if (!items.length) {
+    list.innerHTML = emptyState("暂无事件", "后台自动检查后会记录跟买、跳过和风控结果。");
+    return;
+  }
+  list.innerHTML = items.map((item) => `<article class="event-card">
+    <div class="event-top">
+      <span class="event-tag ${escapeHtml(item.action)}">${escapeHtml(actionText(item.action))}</span>
+      <small>${timeText(item.created_at)}</small>
+    </div>
+    <p>${escapeHtml(reasonText(item.reason))}</p>
+    <small>${escapeHtml(item.market_slug || item.wallet || "-")} ${item.amount_usdc ? `· ${usdc(item.amount_usdc)}` : ""}</small>
+  </article>`).join("");
 }
 
 function renderDetail() {
@@ -243,117 +314,90 @@ function renderDetail() {
   );
   $("follow-selected-button").disabled = !appState.selectedWallet || selectedFollowed;
   $("follow-selected-button").textContent = selectedFollowed ? "已在跟单" : "跟单此钱包";
+  $("detail-title").textContent = appState.selectedLabel || (appState.selectedWallet ? shortWallet(appState.selectedWallet) : "选择钱包");
   $("detail-subtitle").textContent = appState.selectedWallet
-    ? `${appState.selectedLabel || "已选钱包"} · ${shortWallet(appState.selectedWallet)}`
-    : "选择一个钱包后查看近期买卖。";
+    ? appState.selectedWallet
+    : "从 AI 推荐或跟单钱包进入。";
   if (!appState.selectedWallet) {
     $("detail-summary").innerHTML = "";
-    $("trade-list").innerHTML = `<div class="empty-state"><strong>未选择钱包</strong><p>从候选池或跟单列表选择一个钱包。</p></div>`;
+    $("trade-list").innerHTML = emptyState("未选择钱包", "从 AI 推荐或钱包列表点“看下注”。");
     return;
   }
   if (appState.detailLoading) {
     $("detail-summary").innerHTML = "";
-    $("trade-list").innerHTML = `<div class="empty-state"><strong>正在读取下注详情</strong><p>正在从 Polymarket 数据接口读取这个钱包的近期交易。</p></div>`;
+    $("trade-list").innerHTML = emptyState("正在读取下注", "正在加载这个钱包的近期买入和卖出。");
     return;
   }
   if (appState.detailError) {
     $("detail-summary").innerHTML = "";
-    $("trade-list").innerHTML = `<div class="empty-state error"><strong>下注详情读取失败</strong><p>${escapeHtml(appState.detailError)}</p></div>`;
+    $("trade-list").innerHTML = emptyState("下注读取失败", appState.detailError);
     return;
   }
   const buys = appState.selectedTrades.filter((item) => item.side === "BUY").length;
   const sells = appState.selectedTrades.filter((item) => item.side === "SELL").length;
-  const unknown = appState.selectedTrades.filter((item) => tradeSideKey(item.side) === "UNKNOWN").length;
   const total = appState.selectedTrades.reduce((sum, item) => sum + Number(item.usdc_size || 0), 0);
   $("detail-summary").innerHTML = `
     <div><span>近期交易</span><strong>${appState.selectedTrades.length}</strong></div>
-    <div><span>买入 / 卖出 / 未识别</span><strong>${buys} / ${sells} / ${unknown}</strong></div>
+    <div><span>买入 / 卖出</span><strong>${buys} / ${sells}</strong></div>
     <div><span>名义金额</span><strong>${usdc(total)}</strong></div>
   `;
-  const filteredTrades = appState.selectedTrades.filter((item) => {
-    if (appState.tradeFilter === "ALL") return true;
-    return tradeSideKey(item.side) === appState.tradeFilter;
-  });
-  if (!filteredTrades.length) {
-    const filterText = appState.tradeFilter === "ALL" ? "近期下注" : tradeSideText(appState.tradeFilter);
-    $("trade-list").innerHTML = `<div class="empty-state"><strong>没有读取到近期下注</strong><p>这个钱包可能近期不活跃，或数据接口没有返回公开交易。</p></div>`;
-    if (appState.selectedTrades.length) {
-      $("trade-list").innerHTML = `<div class="empty-state"><strong>没有${escapeHtml(filterText)}记录</strong><p>Polymarket 本次返回的近期交易里没有这一类方向。</p></div>`;
-    }
+  const filtered = appState.selectedTrades.filter((item) => appState.tradeFilter === "ALL" || tradeSideKey(item.side) === appState.tradeFilter);
+  if (!filtered.length) {
+    $("trade-list").innerHTML = emptyState("没有这一类下注", "换个筛选条件，或这个钱包近期没有公开交易。");
     return;
   }
-  $("trade-list").innerHTML = filteredTrades
-    .map((trade) => `<div class="trade-row">
-      <div>
-        <strong>${escapeHtml(trade.market_title || trade.market_slug || "未知市场")}</strong>
-        <span>${escapeHtml(trade.outcome || "-")} · ${timeText(trade.timestamp)} · 原始方向 ${escapeHtml(trade.raw_side || trade.side || "-")}</span>
-      </div>
-      <div class="trade-numbers">
-        <b class="${tradeSideKey(trade.side).toLowerCase()}">${tradeSideText(trade.side)}</b>
-        <span>${usdc(trade.usdc_size)} · ${number(trade.size, 4)} 份 · ${Number(trade.price || 0).toFixed(4)}</span>
-      </div>
-    </div>`)
-    .join("");
+  $("trade-list").innerHTML = filtered.map(tradeCard).join("");
 }
 
-function renderPositions(items) {
-  const list = $("positions-list");
-  if (!items.length) {
-    list.innerHTML = `<div class="empty-state compact"><strong>暂无持仓</strong><p>只有本程序跟买后才会出现仓位。</p></div>`;
-    return;
-  }
-  list.innerHTML = items.map((item) => `<div class="compact-row">
-    <strong>${escapeHtml(item.market_slug || item.token_id)}</strong>
-    <span>${escapeHtml(item.outcome || "-")} · ${number(item.open_shares, 4)} 份 · 买入 ${usdc(item.total_buy_usdc)}</span>
-  </div>`).join("");
-}
-
-function renderEvents(items) {
-  const list = $("events-list");
-  if (!items.length) {
-    list.innerHTML = `<div class="empty-state compact"><strong>暂无事件</strong><p>后台自动检查后会记录结果。</p></div>`;
-    return;
-  }
-  list.innerHTML = items.map((item) => `<div class="event-row">
-    <span class="event-action ${escapeHtml(item.action)}">${escapeHtml(actionText(item.action))}</span>
-    <div>
-      <strong>${escapeHtml(reasonText(item.reason))}</strong>
-      <small>${timeText(item.created_at)} · ${escapeHtml(item.market_slug || item.wallet || "-")}</small>
+function tradeCard(trade) {
+  const side = tradeSideKey(trade.side).toLowerCase();
+  return `<article class="trade-card ${side}" data-action="open-trade" data-trade="${escapeHtml(trade.trade_id)}">
+    <div class="trade-meta">
+      <span class="side-pill ${side}">${tradeSideText(trade.side)}</span>
+      <small>${timeText(trade.timestamp)}</small>
     </div>
-    <b>${item.amount_usdc ? usdc(item.amount_usdc) : ""}</b>
-  </div>`).join("");
+    <h3>${escapeHtml(trade.market_title || trade.market_slug || "未知市场")}</h3>
+    <p>${escapeHtml(trade.outcome || "-")} · ${number(trade.size, 4)} 份 · 价格 ${number(trade.price, 4)}</p>
+    <div class="metric-row">
+      <div class="metric-pill"><span>金额</span><strong>${usdc(trade.usdc_size)}</strong></div>
+      <div class="metric-pill"><span>方向</span><strong>${tradeSideText(trade.side)}</strong></div>
+      <div class="metric-pill"><span>时间</span><strong>${relative(trade.timestamp)}</strong></div>
+    </div>
+  </article>`;
 }
 
-async function refreshAll() {
-  const [status, wallets, positions, events] = await Promise.all([
+async function refreshCore() {
+  const [status, portfolio, wallets, events] = await Promise.all([
     api("/api/status"),
+    api("/portfolio"),
     api("/wallets"),
-    api("/positions?include_closed=false"),
-    api("/events?limit=40"),
+    api("/events?limit=50"),
   ]);
   appState.status = status;
+  appState.portfolio = portfolio;
   appState.wallets = wallets.wallets || [];
-  renderStatus();
+  renderHeader();
   renderWallets();
-  renderCandidates();
-  renderPositions(positions.positions || []);
+  renderPositions();
   renderEvents(events.events || []);
+  renderDetail();
+  renderRecommendations();
 }
 
-async function loadCandidates() {
-  const button = $("discover-button");
-  button.disabled = true;
-  button.textContent = "加载中";
+async function loadRecommendations() {
+  appState.aiLoading = true;
+  appState.aiError = "";
+  renderRecommendations();
   try {
-    const result = await api("/leaderboard?category=SPORTS&time_period=WEEK&order_by=PNL&limit=30");
-    appState.candidates = result.wallets || [];
-    renderCandidates();
-    toast(`已加载 ${appState.candidates.length} 个候选钱包`);
+    const result = await api("/recommendations?limit=12");
+    appState.recommendations = result.wallets || [];
+    appState.aiMode = result.ai_mode || "rules";
+    appState.aiError = result.error ? "Polymarket 数据接口暂不可达，无法分析排行榜。" : "";
   } catch (error) {
-    toast(`候选加载失败：${error.message}`, true);
+    appState.aiError = `推荐接口异常：${error.message}`;
   } finally {
-    button.disabled = false;
-    button.textContent = "加载候选";
+    appState.aiLoading = false;
+    renderRecommendations();
   }
 }
 
@@ -363,42 +407,22 @@ async function selectWallet(wallet, label = "") {
   appState.selectedTrades = [];
   appState.detailLoading = true;
   appState.detailError = "";
-  renderCandidates();
+  switchScreen("detail");
   renderWallets();
   renderDetail();
-  focusDetailPanel();
   try {
-    const result = await api(`/wallets/${encodeURIComponent(wallet)}/trades?limit=30`);
+    const result = await api(`/wallets/${encodeURIComponent(wallet)}/trades?limit=40`);
     if (result.ok === false) {
-      appState.selectedTrades = [];
       appState.detailError = `数据接口不可达：${result.error || "未知错误"}`;
-      renderDetail();
       return;
     }
     appState.selectedTrades = result.trades || [];
-    appState.detailError = "";
-    renderDetail();
   } catch (error) {
     appState.detailError = error.message;
-    renderDetail();
   } finally {
     appState.detailLoading = false;
     renderDetail();
   }
-}
-
-function focusDetailPanel() {
-  const detail = $("detail-section");
-  if (!detail) return;
-  if (window.matchMedia("(max-width: 1240px)").matches) {
-    detail.scrollIntoView({ behavior: "smooth", block: "start" });
-    return;
-  }
-  detail.classList.remove("attention");
-  window.requestAnimationFrame(() => {
-    detail.classList.add("attention");
-    window.setTimeout(() => detail.classList.remove("attention"), 850);
-  });
 }
 
 async function followWallet(wallet, label = "", source = "leaderboard") {
@@ -411,19 +435,19 @@ async function followWallet(wallet, label = "", source = "leaderboard") {
     body: JSON.stringify({ wallet, label, source }),
   });
   toast("已加入自动跟单");
-  await refreshAll();
+  await refreshCore();
 }
 
 async function pauseWallet(wallet) {
   await api(`/wallets/${encodeURIComponent(wallet)}/pause`, { method: "POST" });
   toast("已暂停跟单");
-  await refreshAll();
+  await refreshCore();
 }
 
 async function resumeWallet(wallet) {
   await api(`/wallets/${encodeURIComponent(wallet)}/resume`, { method: "POST" });
   toast("已恢复跟单");
-  await refreshAll();
+  await refreshCore();
 }
 
 async function deleteWallet(wallet) {
@@ -434,10 +458,9 @@ async function deleteWallet(wallet) {
     appState.selectedTrades = [];
     appState.detailError = "";
     appState.detailLoading = false;
-    renderDetail();
   }
   toast("已删除跟单钱包");
-  await refreshAll();
+  await refreshCore();
 }
 
 async function manualScan() {
@@ -446,13 +469,13 @@ async function manualScan() {
   button.textContent = "补查中";
   try {
     await api("/scan", { method: "POST" });
-    await refreshAll();
+    await refreshCore();
     toast("手动补查完成");
   } catch (error) {
     toast(`补查失败：${error.message}`, true);
   } finally {
     button.disabled = false;
-    button.textContent = "手动补查";
+    button.textContent = "立即补查";
   }
 }
 
@@ -461,18 +484,43 @@ async function diagnose() {
     const result = await api("/diagnostics");
     const checks = result.checks || {};
     const leaderboard = checks.sports_leaderboard?.ok ? "榜单正常" : `榜单失败：${checks.sports_leaderboard?.error || "-"}`;
-    const activity = checks.first_wallet_activity?.ok ? `首个钱包 ${checks.first_wallet_activity.raw_count} 条交易` : `钱包读取失败：${checks.first_wallet_activity?.error || "-"}`;
+    const activity = checks.first_wallet_activity?.ok ? `钱包 ${checks.first_wallet_activity.raw_count} 条交易` : `钱包读取：${checks.first_wallet_activity?.error || "-"}`;
     toast(`${leaderboard}；${activity}`, true);
   } catch (error) {
     toast(`诊断失败：${error.message}`, true);
   }
 }
 
+function openTradeSheet(tradeId) {
+  const trade = appState.selectedTrades.find((item) => item.trade_id === tradeId);
+  if (!trade) return;
+  $("sheet-content").innerHTML = `<h2>${escapeHtml(trade.market_title || trade.market_slug || "下注详情")}</h2>
+    <p>${escapeHtml(trade.outcome || "-")} · ${tradeSideText(trade.side)} · ${timeText(trade.timestamp)}</p>
+    <div class="sheet-grid">
+      <div><span>金额</span><strong>${usdc(trade.usdc_size)}</strong></div>
+      <div><span>份额</span><strong>${number(trade.size, 6)}</strong></div>
+      <div><span>价格</span><strong>${number(trade.price, 6)}</strong></div>
+      <div><span>市场</span><strong>${escapeHtml(trade.market_slug || "-")}</strong></div>
+      <div><span>Token</span><strong>${escapeHtml(trade.token_id || "-")}</strong></div>
+      <div><span>钱包</span><strong>${escapeHtml(shortWallet(trade.wallet || appState.selectedWallet))}</strong></div>
+    </div>`;
+  $("sheet-backdrop").classList.add("show");
+  $("trade-sheet").classList.add("show");
+  $("trade-sheet").setAttribute("aria-hidden", "false");
+}
+
+function closeTradeSheet() {
+  $("sheet-backdrop").classList.remove("show");
+  $("trade-sheet").classList.remove("show");
+  $("trade-sheet").setAttribute("aria-hidden", "true");
+}
+
 function bindEvents() {
-  $("refresh-button").addEventListener("click", () => refreshAll().catch((error) => toast(error.message, true)));
+  $("refresh-button").addEventListener("click", () => refreshCore().catch((error) => toast(error.message, true)));
   $("diagnose-button").addEventListener("click", diagnose);
   $("manual-scan-button").addEventListener("click", manualScan);
-  $("discover-button").addEventListener("click", loadCandidates);
+  $("recommend-refresh-button").addEventListener("click", loadRecommendations);
+  $("ai-load-button").addEventListener("click", loadRecommendations);
   $("follow-selected-button").addEventListener("click", () => followWallet(appState.selectedWallet, appState.selectedLabel).catch((error) => toast(error.message, true)));
   $("wallet-add-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -484,6 +532,12 @@ function bindEvents() {
       })
       .catch((error) => toast(error.message, true));
   });
+  $("sheet-close-button").addEventListener("click", closeTradeSheet);
+  $("sheet-backdrop").addEventListener("click", closeTradeSheet);
+
+  document.querySelectorAll(".bottom-nav button").forEach((button) => {
+    button.addEventListener("click", () => switchScreen(button.dataset.nav));
+  });
 
   document.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action]");
@@ -491,19 +545,12 @@ function bindEvents() {
     const action = target.dataset.action;
     const wallet = target.dataset.wallet || "";
     const label = target.dataset.label || "";
-    if (action === "select" || action === "select-candidate") selectWallet(wallet, label);
-    if (action === "follow-candidate") followWallet(wallet, label).catch((error) => toast(error.message, true));
+    if (action === "inspect-recommendation" || action === "select-wallet") selectWallet(wallet, label);
+    if (action === "follow-recommendation") followWallet(wallet, label, "leaderboard").catch((error) => toast(error.message, true));
     if (action === "pause") pauseWallet(wallet).catch((error) => toast(error.message, true));
     if (action === "resume") resumeWallet(wallet).catch((error) => toast(error.message, true));
     if (action === "delete-wallet") deleteWallet(wallet).catch((error) => toast(error.message, true));
-  });
-
-  document.querySelectorAll(".rail-action").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.querySelectorAll(".rail-action").forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
-      document.getElementById(button.dataset.section)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    if (action === "open-trade") openTradeSheet(target.dataset.trade || "");
   });
 
   $("trade-filter").addEventListener("click", (event) => {
@@ -519,6 +566,7 @@ function bindEvents() {
 window.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   renderDetail();
-  refreshAll().catch((error) => toast(`加载失败：${error.message}`, true));
-  window.setInterval(() => refreshAll().catch(() => undefined), 8000);
+  refreshCore().catch((error) => toast(`加载失败：${error.message}`, true));
+  loadRecommendations().catch((error) => toast(`推荐失败：${error.message}`, true));
+  window.setInterval(() => refreshCore().catch(() => undefined), 8000);
 });

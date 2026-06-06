@@ -16,6 +16,7 @@ from .engine import CopyTradingEngine
 from .executor import build_executor
 from .market_filter import DeepSeekSportsClassifier
 from .polymarket_client import PolymarketPublicClient
+from .recommendations import recommend_wallets
 from .scoring import score_wallets
 from .state import StateStore
 
@@ -161,6 +162,34 @@ async def api_status() -> Dict[str, Any]:
     }
 
 
+@app.get("/portfolio")
+async def portfolio() -> Dict[str, Any]:
+    settings: Settings = runtime["settings"]
+    state: StateStore = runtime["state"]
+    stats = state.stats()
+    positions = state.positions(include_closed=False)
+    net_cash_flow = round(float(stats["sell_usdc"]) - float(stats["buy_usdc"]), 2)
+    open_cost = round(sum(float(item.get("total_buy_usdc") or 0) for item in positions), 2)
+    return {
+        "mode": settings.execution_mode,
+        "live_trading_enabled": settings.live_trading_enabled,
+        "balance": {
+            "available_usdc": None,
+            "status": "not_connected" if not settings.live_trading_enabled else "not_available",
+            "label": "模拟模式" if not settings.live_trading_enabled else "余额暂不可读",
+        },
+        "performance": {
+            "buy_usdc": round(float(stats["buy_usdc"]), 2),
+            "sell_usdc": round(float(stats["sell_usdc"]), 2),
+            "net_cash_flow": net_cash_flow,
+            "open_cost": open_cost,
+            "open_positions": int(stats["open_positions"]),
+            "events": int(stats["events"]),
+        },
+        "positions": positions,
+    }
+
+
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
@@ -301,6 +330,16 @@ async def leaderboard(
         offset=offset,
     )
     return {"wallets": items}
+
+
+@app.get("/recommendations")
+async def recommendations(limit: int = 12) -> Dict[str, Any]:
+    settings: Settings = runtime["settings"]
+    public: PolymarketPublicClient = runtime["public"]
+    try:
+        return await recommend_wallets(settings, public, limit=limit)
+    except Exception as exc:
+        return {"ai_used": False, "ai_mode": "error", "wallets": [], "error": _error_message(exc)}
 
 
 @app.get("/diagnostics")

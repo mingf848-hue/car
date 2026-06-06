@@ -2,125 +2,130 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Polymarket 自动跟单工作台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Polymarket AI 跟单</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <main class="workspace">
-      <header class="app-header">
+    <main class="app-shell">
+      <header class="app-topbar">
         <div>
-          <p class="eyebrow">Polymarket Sports Copy</p>
-          <h1>自动跟单工作台</h1>
-          <p id="system-line">正在连接服务...</p>
+          <span class="eyebrow">AI Copy Trading</span>
+          <h1>Polymarket 跟单</h1>
         </div>
-        <div class="header-actions">
-          <button class="ghost-button" id="refresh-button">刷新</button>
-          <button class="ghost-button" id="diagnose-button">诊断</button>
-          <button class="primary-button" id="manual-scan-button">手动补查</button>
+        <div class="top-actions">
+          <button class="icon-button" id="diagnose-button" aria-label="诊断">诊断</button>
+          <button class="icon-button primary" id="refresh-button" aria-label="刷新">刷新</button>
         </div>
       </header>
 
-      <section class="ops-grid" aria-live="polite">
-        <article class="ops-card main-state" id="state-card">
-          <span>自动状态</span>
-          <strong id="state-title">加载中</strong>
-          <p id="state-detail">后台会自动检查已启用的钱包。</p>
+      <section class="screen active" id="screen-home" data-screen="home">
+        <article class="hero-card" id="state-card">
+          <div class="hero-row">
+            <span>本地估算收益</span>
+            <b id="mode-pill">读取中</b>
+          </div>
+          <strong id="net-pnl">$0.00</strong>
+          <p id="state-detail">正在连接自动跟单服务。</p>
+          <div class="hero-metrics">
+            <div><span>可用余额</span><strong id="balance-value">--</strong><small id="balance-label">读取中</small></div>
+            <div><span>跟单投入</span><strong id="buy-total">$0.00</strong><small id="copy-size">每单 $5.00</small></div>
+            <div><span>持仓</span><strong id="position-count">0</strong><small id="open-cost">$0.00 成本</small></div>
+          </div>
         </article>
-        <article class="ops-card">
-          <span>跟单钱包</span>
-          <strong id="active-wallet-count">-</strong>
-          <p id="active-wallet-detail">启用后自动跟单。</p>
-        </article>
-        <article class="ops-card">
-          <span>跟单金额</span>
-          <strong id="copy-size">-</strong>
-          <p>每个新买单固定金额。</p>
-        </article>
-        <article class="ops-card">
-          <span>自己的钱包</span>
-          <strong id="execution-wallet-title">-</strong>
-          <p id="execution-wallet-detail">读取配置中。</p>
-        </article>
-        <article class="ops-card">
-          <span>最近检查</span>
-          <strong id="last-check">-</strong>
-          <p id="next-check">等待后台轮询。</p>
-        </article>
-      </section>
 
-      <section class="action-rail">
-        <button class="rail-action active" data-section="followed-section">跟单钱包</button>
-        <button class="rail-action" data-section="discover-section">发现候选</button>
-        <button class="rail-action" data-section="detail-section">下注详情</button>
-        <button class="rail-action" data-section="events-section">事件流水</button>
-      </section>
-
-      <section class="layout-grid">
-        <article class="panel wallet-panel" id="followed-section">
-          <div class="panel-head">
+        <section class="section-block">
+          <div class="section-head">
             <div>
-              <h2>正在跟单的钱包</h2>
-              <p>这里的钱包会被后台自动轮询；可随时暂停或恢复。</p>
+              <h2>AI 推荐跟单</h2>
+              <p id="ai-mode">正在分析候选钱包。</p>
             </div>
+            <button class="text-button" id="recommend-refresh-button">重新分析</button>
           </div>
-          <form class="wallet-add" id="wallet-add-form">
-            <input id="wallet-address-input" name="wallet" placeholder="粘贴 0x 钱包地址" autocomplete="off" spellcheck="false" />
-            <button class="secondary-button" type="submit">添加</button>
-          </form>
-          <div id="followed-wallets" class="wallet-list"></div>
-        </article>
+          <div class="recommend-strip" id="home-recommendations"></div>
+        </section>
 
-        <article class="panel discover-panel" id="discover-section">
-          <div class="panel-head">
-            <div>
-              <h2>候选聪明钱包</h2>
-              <p>来自体育排行榜。先查看下注，再决定是否跟单。</p>
-            </div>
-            <button class="secondary-button" id="discover-button">加载候选</button>
-          </div>
-          <div id="candidate-wallets" class="candidate-list"></div>
-        </article>
-
-        <article class="panel detail-panel" id="detail-section">
-          <div class="panel-head">
-            <div>
-              <h2>钱包下注详情</h2>
-              <p id="detail-subtitle">选择一个钱包后查看近期买卖。</p>
-            </div>
-            <button class="secondary-button" id="follow-selected-button" disabled>跟单此钱包</button>
-          </div>
-          <div class="segmented" id="trade-filter">
-            <button class="active" data-filter="ALL">全部</button>
-            <button data-filter="BUY">买入</button>
-            <button data-filter="SELL">卖出</button>
-            <button data-filter="UNKNOWN">未识别</button>
-          </div>
-          <div class="detail-summary" id="detail-summary"></div>
-          <div id="trade-list" class="trade-list"></div>
-        </article>
-
-        <article class="panel positions-panel">
-          <div class="panel-head">
+        <section class="section-block">
+          <div class="section-head">
             <div>
               <h2>本地持仓</h2>
-              <p>只显示本程序自己跟单产生的仓位。</p>
+              <p>只显示本程序跟单产生的仓位。</p>
             </div>
           </div>
-          <div id="positions-list" class="compact-list"></div>
-        </article>
-
-        <article class="panel events-panel" id="events-section">
-          <div class="panel-head">
-            <div>
-              <h2>事件流水</h2>
-              <p>自动跟买、跳过、预热、风控都会记录。</p>
-            </div>
-          </div>
-          <div id="events-list" class="event-list"></div>
-        </article>
+          <div class="compact-stack" id="positions-list"></div>
+        </section>
       </section>
+
+      <section class="screen" id="screen-ai" data-screen="ai">
+        <div class="section-head sticky-head">
+          <div>
+            <h2>AI 钱包推荐</h2>
+            <p>综合盈利、成交、活跃度和近期下注。</p>
+          </div>
+          <button class="text-button" id="ai-load-button">刷新</button>
+        </div>
+        <div class="recommend-list" id="recommendation-list"></div>
+      </section>
+
+      <section class="screen" id="screen-wallets" data-screen="wallets">
+        <form class="wallet-add-card" id="wallet-add-form">
+          <label for="wallet-address-input">添加跟单钱包</label>
+          <div>
+            <input id="wallet-address-input" name="wallet" placeholder="粘贴 0x 钱包地址" autocomplete="off" spellcheck="false" />
+            <button type="submit">添加</button>
+          </div>
+        </form>
+        <div class="section-head">
+          <div>
+            <h2>正在跟单</h2>
+            <p id="active-wallet-detail">还没有选择钱包。</p>
+          </div>
+          <button class="text-button" id="manual-scan-button">立即补查</button>
+        </div>
+        <div class="wallet-stack" id="followed-wallets"></div>
+      </section>
+
+      <section class="screen" id="screen-detail" data-screen="detail">
+        <article class="wallet-profile">
+          <span id="detail-kicker">下注详情</span>
+          <h2 id="detail-title">选择钱包</h2>
+          <p id="detail-subtitle">从 AI 推荐或跟单钱包进入。</p>
+          <button class="primary-wide" id="follow-selected-button" disabled>跟单此钱包</button>
+        </article>
+        <div class="segmented" id="trade-filter">
+          <button class="active" data-filter="ALL">全部</button>
+          <button data-filter="BUY">买入</button>
+          <button data-filter="SELL">卖出</button>
+        </div>
+        <div class="detail-summary" id="detail-summary"></div>
+        <div class="trade-stack" id="trade-list"></div>
+      </section>
+
+      <section class="screen" id="screen-events" data-screen="events">
+        <div class="section-head sticky-head">
+          <div>
+            <h2>事件流水</h2>
+            <p>自动跟买、跳过、预热、风控。</p>
+          </div>
+        </div>
+        <div class="event-stack" id="events-list"></div>
+      </section>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="active" data-nav="home">首页</button>
+        <button data-nav="ai">AI 推荐</button>
+        <button data-nav="wallets">钱包</button>
+        <button data-nav="detail">详情</button>
+        <button data-nav="events">流水</button>
+      </nav>
     </main>
+
+    <div class="sheet-backdrop" id="sheet-backdrop"></div>
+    <aside class="trade-sheet" id="trade-sheet" aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <button class="sheet-close" id="sheet-close-button">关闭</button>
+      <div id="sheet-content"></div>
+    </aside>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="/static/app.js"></script>
