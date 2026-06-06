@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -9,7 +10,7 @@ from typing import Optional, Tuple
 def _csv(value: Optional[str]) -> Tuple[str, ...]:
     if not value:
         return ()
-    return tuple(item.strip() for item in value.split(",") if item.strip())
+    return tuple(item.strip() for item in re.split(r"[\s,;]+", value) if item.strip())
 
 
 def _bool(name: str, default: bool) -> bool:

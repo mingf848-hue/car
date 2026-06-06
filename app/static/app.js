@@ -13,7 +13,7 @@ function formatUsdc(value) {
 
 function formatNumber(value, digits = 4) {
   const number = Number(value || 0);
-  return number.toLocaleString(undefined, {
+  return number.toLocaleString("zh-CN", {
     minimumFractionDigits: 0,
     maximumFractionDigits: digits,
   });
@@ -21,7 +21,88 @@ function formatNumber(value, digits = 4) {
 
 function formatTime(seconds) {
   if (!seconds) return "-";
-  return new Date(Number(seconds) * 1000).toLocaleString();
+  return new Date(Number(seconds) * 1000).toLocaleString("zh-CN");
+}
+
+function modeLabel(mode, live) {
+  if (live) return "实盘交易";
+  if (mode === "dry_run") return "模拟模式";
+  if (mode === "live") return "实盘模式未授权";
+  return mode || "-";
+}
+
+function sellModeLabel(mode) {
+  const labels = {
+    close_full_on_leader_sell: "聪明钱包卖出时全平本地跟单仓位",
+  };
+  return labels[mode] || mode || "-";
+}
+
+function statusLabel(status) {
+  const labels = {
+    open: "持仓中",
+    closed: "已平仓",
+  };
+  return labels[status] || status || "-";
+}
+
+function actionLabel(action) {
+  const labels = {
+    dry_run_buy: "模拟跟买",
+    live_buy: "实盘跟买",
+    dry_run_sell: "模拟跟卖",
+    live_sell: "实盘跟卖",
+    skip: "已跳过",
+    blocked: "已阻止",
+    warmup: "首次预热",
+    config_error: "配置错误",
+  };
+  return labels[action] || action || "-";
+}
+
+function reasonLabel(reason) {
+  if (/^copied_fixed_[0-9.]+_usdc$/.test(reason || "")) {
+    const amount = reason.match(/^copied_fixed_([0-9.]+)_usdc$/)?.[1] || "";
+    return `已按固定金额 ${amount} USDC 跟买`;
+  }
+  if (/^closed_tracked_position_[0-9.]+_shares$/.test(reason || "")) {
+    const shares = reason.match(/^closed_tracked_position_([0-9.]+)_shares$/)?.[1] || "";
+    return `已平掉本地跟单持仓 ${shares} 份`;
+  }
+  if (/^polymarket_geoblocked_/i.test(reason || "")) {
+    return "Polymarket 判定当前服务器地区受限，已停止开仓";
+  }
+  if (/^polymarket_close_only_/i.test(reason || "")) {
+    return "Polymarket 判定当前服务器地区为只允许平仓地区，已停止开仓";
+  }
+  if (/^geoblock_check_failed:/i.test(reason || "")) {
+    return `地区检查失败：${reason.split(":").slice(1).join(":").trim()}`;
+  }
+  const labels = {
+    simulated_buy: "模拟买入成功",
+    simulated_sell: "模拟卖出成功",
+    live_buy_submitted: "实盘买单已提交",
+    live_sell_submitted: "实盘卖单已提交",
+    token_on_cooldown: "同一选项仍在冷却时间内",
+    not_sports_market: "不是体育市场",
+    no_tracked_position_to_sell: "本程序没有可跟卖的本地持仓",
+    slippage_too_high: "买入滑点过高",
+    sell_slippage_too_high: "卖出滑点过高",
+    daily_live_limit_reached: "已达到每日实盘买入上限",
+    missing_current_price: "无法获取当前买入价格",
+    missing_current_sell_price: "无法获取当前卖出价格",
+    leader_trade_too_small: "聪明钱包这笔交易金额太小",
+    unsupported_side: "暂不支持该交易方向",
+    unsupported_leader_side: "暂不支持聪明钱包这类交易方向",
+    price_check_failed: "买入价格检查失败",
+    sell_price_check_failed: "卖出价格检查失败",
+    auto_follow_sells_disabled: "自动跟卖已关闭",
+    tracked_position_below_min_sell_shares: "本地持仓份额低于最小卖出数量",
+    unsupported_sell_mode: "暂不支持当前卖出规则",
+    geoblocked: "当前服务器地区受限，已停止开仓",
+    no_recent_trades: "近期没有交易记录",
+  };
+  return labels[reason] || reason || "-";
 }
 
 function toast(message) {
@@ -50,26 +131,26 @@ function renderStatus(payload) {
   const mode = config.execution_mode || "-";
   const live = Boolean(config.live_trading_enabled);
 
-  $("side-mode").textContent = live ? "Live trading" : `${mode} mode`;
+  $("side-mode").textContent = modeLabel(mode, live);
   $("side-dot").className = live ? "dot live" : "dot";
   if (payload.last_error) $("side-dot").className = "dot error";
 
   $("subline").textContent = payload.last_error
-    ? `Last error: ${payload.last_error}`
-    : `Watching ${config.smart_wallets?.length || 0} wallets, sports-only ${config.sports_only ? "on" : "off"}.`;
+    ? `最近错误：${payload.last_error}`
+    : `正在监控 ${config.smart_wallets?.length || 0} 个钱包，只跟体育：${config.sports_only ? "开启" : "关闭"}。`;
 
-  $("metric-mode").textContent = mode.toUpperCase();
-  $("metric-live").textContent = live ? "Real orders enabled" : "Simulation only";
+  $("metric-mode").textContent = modeLabel(mode, live);
+  $("metric-live").textContent = live ? "真实订单已开启" : "当前只模拟，不会真实下单";
   $("metric-copy-size").textContent = formatUsdc(config.copy_amount_usdc || 5);
   $("metric-positions").textContent = stats.open_positions ?? "-";
-  $("metric-shares").textContent = `${formatNumber(stats.open_shares || 0)} open shares`;
+  $("metric-shares").textContent = `${formatNumber(stats.open_shares || 0)} 份未平仓`;
   $("metric-events").textContent = stats.events ?? "-";
-  $("metric-flow").textContent = `${formatUsdc(stats.buy_usdc)} bought / ${formatUsdc(stats.sell_usdc)} sold`;
+  $("metric-flow").textContent = `买入 ${formatUsdc(stats.buy_usdc)} / 卖出 ${formatUsdc(stats.sell_usdc)}`;
 
-  $("risk-sports").textContent = config.sports_only ? "On" : "Off";
-  $("risk-sells").textContent = config.auto_follow_sells ? "On" : "Off";
-  $("risk-sell-mode").textContent = config.sell_mode || "-";
-  $("risk-slippage").textContent = `${config.max_slippage_bps || 0} bps`;
+  $("risk-sports").textContent = config.sports_only ? "开启" : "关闭";
+  $("risk-sells").textContent = config.auto_follow_sells ? "开启" : "关闭";
+  $("risk-sell-mode").textContent = sellModeLabel(config.sell_mode);
+  $("risk-slippage").textContent = `${config.max_slippage_bps || 0} 基点`;
   $("risk-daily-cap").textContent = formatUsdc(config.max_live_daily_usdc);
 }
 
@@ -77,7 +158,7 @@ function renderPositions(items) {
   state.positions = items;
   const body = $("positions-body");
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">No tracked positions.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">暂无跟单持仓。</td></tr>';
     return;
   }
   body.innerHTML = items
@@ -89,7 +170,7 @@ function renderPositions(items) {
         <td>${Number(item.avg_entry_price || 0).toFixed(4)}</td>
         <td>${formatUsdc(item.total_buy_usdc)}</td>
         <td>${formatUsdc(item.total_sell_usdc)}</td>
-        <td><span class="pill ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span></td>
+        <td><span class="pill ${escapeHtml(item.status)}">${escapeHtml(statusLabel(item.status))}</span></td>
       </tr>`;
     })
     .join("");
@@ -99,15 +180,15 @@ function renderEvents(items) {
   state.events = items;
   const body = $("events-body");
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">No events yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="empty">暂无事件。点击“立即扫描”后，这里会显示扫描结果。</td></tr>';
     return;
   }
   body.innerHTML = items
     .map((item) => {
       return `<tr>
         <td>${formatTime(item.created_at)}</td>
-        <td><span class="pill ${escapeHtml(item.action)}">${escapeHtml(item.action)}</span></td>
-        <td>${escapeHtml(item.reason || "-")}</td>
+        <td><span class="pill ${escapeHtml(item.action)}">${escapeHtml(actionLabel(item.action))}</span></td>
+        <td>${escapeHtml(reasonLabel(item.reason))}</td>
         <td>${escapeHtml(item.market_slug || "-")}</td>
         <td>${escapeHtml(item.outcome || "-")}</td>
         <td>${formatUsdc(item.amount_usdc)}</td>
@@ -119,7 +200,7 @@ function renderEvents(items) {
 function renderScores(items) {
   const list = $("wallet-score-list");
   if (!items.length) {
-    list.innerHTML = '<div class="empty-block">No wallet scores returned.</div>';
+    list.innerHTML = '<div class="empty-block">没有返回钱包评分。请先在 Zeabur Variables 里填写 SMART_WALLETS。</div>';
     return;
   }
   list.innerHTML = items
@@ -156,32 +237,34 @@ async function refreshAll() {
 async function runScan() {
   const button = $("scan-button");
   button.disabled = true;
-  button.textContent = "Scanning";
+  button.textContent = "扫描中";
   try {
     const result = await api("/scan", { method: "POST" });
-    toast(`Scan done: ${result.copied} copied, ${result.skipped} skipped`);
+    const warmed = result.warmed_up ? `，预热历史交易 ${result.warmed_up} 笔` : "";
+    const warmupWallets = result.warmup_wallets ? `，完成 ${result.warmup_wallets} 个钱包首次扫描` : "";
+    toast(`扫描完成：跟单 ${result.copied} 笔，跳过 ${result.skipped} 笔${warmed}${warmupWallets}`);
     await refreshAll();
   } catch (error) {
-    toast(`Scan failed: ${error.message}`);
+    toast(`扫描失败：${error.message}`);
   } finally {
     button.disabled = false;
-    button.textContent = "Run Scan";
+    button.textContent = "立即扫描";
   }
 }
 
 async function scoreWallets() {
   const button = $("score-button");
   button.disabled = true;
-  button.textContent = "Scoring";
+  button.textContent = "评分中";
   try {
     const result = await api("/score-wallets", { method: "POST", body: "{}" });
     renderScores(result.wallets || []);
-    toast("Wallet scores updated");
+    toast("钱包评分已更新");
   } catch (error) {
-    toast(`Score failed: ${error.message}`);
+    toast(`评分失败：${error.message}`);
   } finally {
     button.disabled = false;
-    button.textContent = "Score";
+    button.textContent = "评分";
   }
 }
 
@@ -191,6 +274,6 @@ window.addEventListener("DOMContentLoaded", () => {
   $("score-button").addEventListener("click", scoreWallets);
   $("include-closed").addEventListener("change", () => refreshAll().catch((error) => toast(error.message)));
 
-  refreshAll().catch((error) => toast(`Load failed: ${error.message}`));
+  refreshAll().catch((error) => toast(`加载失败：${error.message}`));
   window.setInterval(() => refreshAll().catch(() => undefined), 15000);
 });

@@ -29,12 +29,24 @@ class CopyTradingEngine:
             "started_at": int(time.time()),
             "wallets": len(self.settings.smart_wallets),
             "fetched": 0,
+            "warmed_up": 0,
+            "warmup_wallets": 0,
             "processed": 0,
             "copied": 0,
             "skipped": 0,
             "blocked": False,
             "errors": [],
         }
+
+        if not self.settings.smart_wallets:
+            result = CopyResult(
+                trade=None,
+                action="config_error",
+                reason="未配置 SMART_WALLETS，请在 Zeabur Variables 里填写要跟踪的钱包地址",
+            )
+            self.state.record_result(result)
+            summary["errors"].append(result.reason)
+            return summary
 
         if self.settings.block_on_geoblock:
             try:
@@ -72,6 +84,26 @@ class CopyTradingEngine:
                     for trade in trades:
                         self.state.mark_seen(trade)
                     self.state.initialize_wallet(wallet)
+                    if not trades:
+                        self.state.record_result(
+                            CopyResult(
+                                trade=None,
+                                action="warmup",
+                                reason="首次扫描已完成：这个钱包近期没有读取到可跟踪交易，请确认地址是 Polymarket 钱包且近期有交易",
+                                payload={"wallet": wallet, "seen_trades": 0},
+                            )
+                        )
+                    else:
+                        self.state.record_result(
+                            CopyResult(
+                                trade=None,
+                                action="warmup",
+                                reason="首次扫描已完成预热：历史交易只记录不跟单，之后的新交易才会触发跟买/跟卖",
+                                payload={"wallet": wallet, "seen_trades": len(trades)},
+                            )
+                        )
+                    summary["warmup_wallets"] += 1
+                    summary["warmed_up"] += len(trades)
                     summary["skipped"] += len(trades)
                     continue
                 self.state.initialize_wallet(wallet)
