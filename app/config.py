@@ -134,7 +134,6 @@ class Settings:
         return {
             "execution_mode": self.execution_mode,
             "live_trading_enabled": self.live_trading_enabled,
-            "smart_wallets": list(self.smart_wallets),
             "copy_amount_usdc": self.copy_amount_usdc,
             "auto_start": self.auto_start,
             "sports_only": self.sports_only,
@@ -145,4 +144,13 @@ class Settings:
             "auto_follow_sells": self.auto_follow_sells,
             "sell_mode": self.sell_mode,
             "sqlite_path": str(self.sqlite_path),
+            "execution_wallet": {
+                "private_key_configured": bool(self.polymarket_private_key),
+                "funder_configured": bool(self.polymarket_funder),
+                "signature_type_configured": self.polymarket_signature_type is not None,
+                "clob_credentials_configured": bool(
+                    self.clob_api_key and self.clob_api_secret and self.clob_api_passphrase
+                ),
+                "derive_api_key_if_missing": self.derive_api_key_if_missing,
+            },
         }

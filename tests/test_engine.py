@@ -94,6 +94,7 @@ class EngineTests(unittest.TestCase):
             public = FakePublic()
             executor = FakeExecutor()
             state = StateStore(settings.sqlite_path)
+            state.upsert_followed_wallet("0xabc", "test wallet", "test", active=True)
             engine = CopyTradingEngine(settings, state, public, executor)
 
             summary = run(engine.run_once())
@@ -113,6 +114,7 @@ class EngineTests(unittest.TestCase):
             public = FakePublic()
             executor = FakeExecutor()
             state = StateStore(settings.sqlite_path)
+            state.upsert_followed_wallet("0xabc", "test wallet", "test", active=True)
             engine = CopyTradingEngine(settings, state, public, executor)
 
             run(engine.run_once())
@@ -165,6 +167,7 @@ class EngineTests(unittest.TestCase):
             public = FakePublic()
             executor = FakeExecutor()
             state = StateStore(settings.sqlite_path)
+            state.upsert_followed_wallet("0xabc", "test wallet", "test", active=True)
             engine = CopyTradingEngine(settings, state, public, executor)
 
             run(engine.run_once())
@@ -198,12 +201,32 @@ class EngineTests(unittest.TestCase):
             public.get_buy_price = high_price
             executor = FakeExecutor()
             state = StateStore(settings.sqlite_path)
+            state.upsert_followed_wallet("0xabc", "test wallet", "test", active=True)
             engine = CopyTradingEngine(settings, state, public, executor)
 
             summary = run(engine.run_once())
 
             self.assertEqual(summary["copied"], 0)
             self.assertEqual(state.recent_events(1)[0]["reason"], "slippage_too_high")
+            self.assertEqual(executor.orders, [])
+
+    def test_env_smart_wallets_are_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                smart_wallets=("0xabc",),
+                sqlite_path=Path(tmp) / "bot.sqlite3",
+                copy_amount_usdc=5,
+                block_on_geoblock=False,
+            )
+            public = FakePublic()
+            executor = FakeExecutor()
+            state = StateStore(settings.sqlite_path)
+            engine = CopyTradingEngine(settings, state, public, executor)
+
+            summary = run(engine.run_once())
+
+            self.assertEqual(summary["wallets"], 0)
+            self.assertEqual(summary["errors"], ["未选择跟单钱包，请先在页面里添加钱包，或从候选钱包里点“跟单”"])
             self.assertEqual(executor.orders, [])
 
 

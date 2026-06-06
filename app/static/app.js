@@ -108,6 +108,19 @@ function tradeSideText(side) {
   return "未识别";
 }
 
+function sourceText(source) {
+  const labels = {
+    leaderboard: "候选池",
+    manual: "手动添加",
+    ui: "页面选择",
+  };
+  return labels[source] || source || "页面选择";
+}
+
+function validWalletAddress(wallet) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(wallet || "").trim());
+}
+
 function insight(status) {
   const config = status?.config || {};
   const automation = status?.automation || {};
@@ -123,11 +136,29 @@ function insight(status) {
   return ["ok", "自动跟单正常", `跟单 ${summary.copied || 0} 笔，跳过 ${summary.skipped || 0} 笔。`];
 }
 
+function executionWalletStatus(config) {
+  const wallet = config.execution_wallet || {};
+  if (config.execution_mode !== "live") {
+    return ["模拟模式", "当前不会真实下单。"];
+  }
+  if (!wallet.private_key_configured) {
+    return ["未接入", "Zeabur 还没有配置实盘私钥。"];
+  }
+  if (!config.live_trading_enabled) {
+    return ["待确认", "实盘模式还没有确认风险开关。"];
+  }
+  if (!wallet.clob_credentials_configured && !wallet.derive_api_key_if_missing) {
+    return ["待补充", "缺少 CLOB 凭证或派生开关。"];
+  }
+  return ["已接入", wallet.clob_credentials_configured ? "实盘 CLOB 凭证已配置。" : "实盘私钥已配置，将尝试派生 CLOB 凭证。"];
+}
+
 function renderStatus() {
   const status = appState.status || {};
   const config = status.config || {};
   const automation = status.automation || {};
   const [tone, title, detail] = insight(status);
+  const [walletTitle, walletDetail] = executionWalletStatus(config);
   $("state-card").className = `ops-card main-state ${tone}`;
   $("state-title").textContent = title;
   $("state-detail").textContent = detail;
@@ -139,21 +170,26 @@ function renderStatus() {
     ? "这些钱包的新交易会被自动检查。"
     : "还没有选择任何跟单钱包。";
   $("copy-size").textContent = usdc(config.copy_amount_usdc || 5);
+  $("execution-wallet-title").textContent = walletTitle;
+  $("execution-wallet-detail").textContent = walletDetail;
   $("last-check").textContent = automation.last_scan_at ? relative(automation.last_scan_at) : "尚未检查";
   $("next-check").textContent = `间隔 ${automation.poll_interval_seconds || config.poll_interval_seconds || 20} 秒；累计 ${automation.scan_count || 0} 次。`;
 }
 
 function walletRow(wallet) {
   const active = Boolean(wallet.active);
-  const locked = Boolean(wallet.locked);
-  return `<div class="wallet-row ${active ? "active" : "paused"}" data-wallet="${escapeHtml(wallet.wallet)}">
+  const selected = wallet.wallet.toLowerCase() === appState.selectedWallet.toLowerCase();
+  return `<div class="wallet-row ${active ? "active" : "paused"} ${selected ? "selected" : ""}" data-wallet="${escapeHtml(wallet.wallet)}">
     <button class="wallet-main" data-action="select" data-wallet="${escapeHtml(wallet.wallet)}">
       <strong>${escapeHtml(wallet.label || shortWallet(wallet.wallet))}</strong>
-      <span>${escapeHtml(shortWallet(wallet.wallet))} · ${locked ? "环境变量" : wallet.source || "页面选择"}</span>
+      <span>${escapeHtml(shortWallet(wallet.wallet))} · ${escapeHtml(sourceText(wallet.source))}</span>
     </button>
-    <button class="mini-button" data-action="${active ? "pause" : "resume"}" data-wallet="${escapeHtml(wallet.wallet)}" ${locked ? "disabled" : ""}>
-      ${locked ? "固定" : active ? "暂停" : "恢复"}
-    </button>
+    <div class="wallet-actions">
+      <button class="mini-button" data-action="${active ? "pause" : "resume"}" data-wallet="${escapeHtml(wallet.wallet)}">
+        ${active ? "暂停" : "恢复"}
+      </button>
+      <button class="mini-button danger" data-action="delete-wallet" data-wallet="${escapeHtml(wallet.wallet)}">删除</button>
+    </div>
   </div>`;
 }
 
@@ -162,7 +198,7 @@ function renderWallets() {
   if (!appState.wallets.length) {
     list.innerHTML = `<div class="empty-state">
       <strong>还没有跟单钱包</strong>
-      <p>先在候选区查看钱包下注，再点“跟单此钱包”。</p>
+      <p>粘贴钱包地址添加，或在候选区点“跟单”。</p>
     </div>`;
     return;
   }
@@ -202,7 +238,11 @@ function renderCandidates() {
 }
 
 function renderDetail() {
-  $("follow-selected-button").disabled = !appState.selectedWallet;
+  const selectedFollowed = appState.wallets.some(
+    (item) => item.wallet.toLowerCase() === appState.selectedWallet.toLowerCase(),
+  );
+  $("follow-selected-button").disabled = !appState.selectedWallet || selectedFollowed;
+  $("follow-selected-button").textContent = selectedFollowed ? "已在跟单" : "跟单此钱包";
   $("detail-subtitle").textContent = appState.selectedWallet
     ? `${appState.selectedLabel || "已选钱包"} · ${shortWallet(appState.selectedWallet)}`
     : "选择一个钱包后查看近期买卖。";
@@ -361,11 +401,14 @@ function focusDetailPanel() {
   });
 }
 
-async function followWallet(wallet, label = "") {
+async function followWallet(wallet, label = "", source = "leaderboard") {
   if (!wallet) return;
+  if (!validWalletAddress(wallet)) {
+    throw new Error("钱包地址格式不对，请粘贴完整 0x 地址");
+  }
   await api("/wallets/follow", {
     method: "POST",
-    body: JSON.stringify({ wallet, label, source: "leaderboard" }),
+    body: JSON.stringify({ wallet, label, source }),
   });
   toast("已加入自动跟单");
   await refreshAll();
@@ -380,6 +423,20 @@ async function pauseWallet(wallet) {
 async function resumeWallet(wallet) {
   await api(`/wallets/${encodeURIComponent(wallet)}/resume`, { method: "POST" });
   toast("已恢复跟单");
+  await refreshAll();
+}
+
+async function deleteWallet(wallet) {
+  await api(`/wallets/${encodeURIComponent(wallet)}`, { method: "DELETE" });
+  if (wallet.toLowerCase() === appState.selectedWallet.toLowerCase()) {
+    appState.selectedWallet = "";
+    appState.selectedLabel = "";
+    appState.selectedTrades = [];
+    appState.detailError = "";
+    appState.detailLoading = false;
+    renderDetail();
+  }
+  toast("已删除跟单钱包");
   await refreshAll();
 }
 
@@ -417,6 +474,16 @@ function bindEvents() {
   $("manual-scan-button").addEventListener("click", manualScan);
   $("discover-button").addEventListener("click", loadCandidates);
   $("follow-selected-button").addEventListener("click", () => followWallet(appState.selectedWallet, appState.selectedLabel).catch((error) => toast(error.message, true)));
+  $("wallet-add-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const input = $("wallet-address-input");
+    const wallet = input.value.trim();
+    followWallet(wallet, "手动添加", "manual")
+      .then(() => {
+        input.value = "";
+      })
+      .catch((error) => toast(error.message, true));
+  });
 
   document.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action]");
@@ -428,6 +495,7 @@ function bindEvents() {
     if (action === "follow-candidate") followWallet(wallet, label).catch((error) => toast(error.message, true));
     if (action === "pause") pauseWallet(wallet).catch((error) => toast(error.message, true));
     if (action === "resume") resumeWallet(wallet).catch((error) => toast(error.message, true));
+    if (action === "delete-wallet") deleteWallet(wallet).catch((error) => toast(error.message, true));
   });
 
   document.querySelectorAll(".rail-action").forEach((button) => {

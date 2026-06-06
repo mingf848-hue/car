@@ -146,6 +146,13 @@ class StateStore:
                 (1 if active else 0, int(time.time()), wallet.lower().strip()),
             )
 
+    def delete_followed_wallet(self, wallet: str) -> None:
+        with self._connect() as con:
+            con.execute(
+                "DELETE FROM followed_wallets WHERE wallet = ?",
+                (wallet.lower().strip(),),
+            )
+
     def followed_wallets(self, include_inactive: bool = True) -> List[Dict[str, Any]]:
         query = "SELECT * FROM followed_wallets"
         if not include_inactive:

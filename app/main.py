@@ -67,8 +67,7 @@ def build_runtime() -> Dict[str, Any]:
 
 
 def _combined_wallets(settings: Settings, state: StateStore) -> List[str]:
-    wallets = [wallet.lower().strip() for wallet in settings.smart_wallets if wallet.strip()]
-    wallets.extend(state.active_followed_wallet_addresses())
+    wallets = state.active_followed_wallet_addresses()
     seen = set()
     unique = []
     for wallet in wallets:
@@ -165,11 +164,12 @@ async def api_status() -> Dict[str, Any]:
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
+    state: StateStore = runtime["state"]
     return {
         "ok": True,
         "mode": settings.execution_mode,
         "live_trading_enabled": settings.live_trading_enabled,
-        "wallets": len(settings.smart_wallets),
+        "wallets": len(_combined_wallets(settings, state)),
         "copy_amount_usdc": settings.copy_amount_usdc,
     }
 
@@ -188,27 +188,18 @@ async def scan() -> Dict[str, Any]:
 async def wallets() -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
     state: StateStore = runtime["state"]
-    configured = [
-        {
-            "wallet": wallet.lower(),
-            "label": "环境变量钱包",
-            "source": "env",
-            "active": True,
-            "locked": True,
-        }
-        for wallet in settings.smart_wallets
-    ]
-    configured_set = {item["wallet"] for item in configured}
     dynamic = [
         {
             **item,
             "active": bool(item.get("active")),
-            "locked": False,
         }
         for item in state.followed_wallets(include_inactive=True)
-        if item["wallet"] not in configured_set
     ]
-    return {"wallets": configured + dynamic, "effective_wallets": _combined_wallets(settings, state)}
+    return {
+        "wallets": dynamic,
+        "effective_wallets": _combined_wallets(settings, state),
+        "ignored_env_wallets": len(settings.smart_wallets),
+    }
 
 
 @app.post("/wallets/follow")
@@ -229,6 +220,13 @@ async def pause_wallet(wallet: str) -> Dict[str, Any]:
 async def resume_wallet(wallet: str) -> Dict[str, Any]:
     state: StateStore = runtime["state"]
     state.set_followed_wallet_active(wallet, True)
+    return await wallets()
+
+
+@app.delete("/wallets/{wallet}")
+async def delete_wallet(wallet: str) -> Dict[str, Any]:
+    state: StateStore = runtime["state"]
+    state.delete_followed_wallet(wallet)
     return await wallets()
 
 
@@ -280,8 +278,9 @@ async def positions(include_closed: bool = False) -> Dict[str, Any]:
 @app.post("/score-wallets")
 async def score_wallets_endpoint(payload: ScoreWalletsRequest) -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
+    state: StateStore = runtime["state"]
     public: PolymarketPublicClient = runtime["public"]
-    wallets = payload.wallets or list(settings.smart_wallets)
+    wallets = payload.wallets or state.active_followed_wallet_addresses()
     return {"wallets": await score_wallets(settings, public, wallets)}
 
 
@@ -308,8 +307,10 @@ async def leaderboard(
 async def diagnostics() -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
     public: PolymarketPublicClient = runtime["public"]
+    active_wallets = _combined_wallets(settings, runtime["state"])
     result: Dict[str, Any] = {
-        "configured_wallets": len(settings.smart_wallets),
+        "configured_wallets": len(active_wallets),
+        "ignored_env_wallets": len(settings.smart_wallets),
         "copy_amount_usdc": settings.copy_amount_usdc,
         "execution_mode": settings.execution_mode,
         "checks": {},
@@ -331,8 +332,8 @@ async def diagnostics() -> Dict[str, Any]:
     except Exception as exc:
         result["checks"]["sports_leaderboard"] = {"ok": False, "error": _error_message(exc)}
 
-    if settings.smart_wallets:
-        wallet = settings.smart_wallets[0]
+    if active_wallets:
+        wallet = active_wallets[0]
         try:
             trades = await public.fetch_wallet_trades(wallet, min(settings.activity_limit, 10))
             result["checks"]["first_wallet_activity"] = {
@@ -349,7 +350,7 @@ async def diagnostics() -> Dict[str, Any]:
     else:
         result["checks"]["first_wallet_activity"] = {
             "ok": False,
-            "error": "未配置 SMART_WALLETS",
+            "error": "未选择跟单钱包",
         }
 
     return result

@@ -124,6 +124,10 @@ small {
   font-size: 12px;
 }
 
+.mini-button.danger {
+  color: var(--red);
+}
+
 button:hover:not(:disabled) {
   border-color: var(--line-2);
 }
@@ -135,7 +139,7 @@ button:disabled {
 
 .ops-grid {
   display: grid;
-  grid-template-columns: 1.35fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.35fr repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -303,6 +307,32 @@ button:disabled {
   gap: 10px;
 }
 
+.wallet-add {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wallet-add input {
+  width: 100%;
+  min-height: 36px;
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-3);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.wallet-add input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px rgba(46, 196, 166, 0.16);
+}
+
 .positions-panel .compact-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -326,8 +356,17 @@ button:disabled {
   align-items: center;
 }
 
+.wallet-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .wallet-row.paused {
   opacity: 0.62;
+}
+
+.wallet-row.selected {
+  border-color: var(--blue);
 }
 
 .wallet-main,
@@ -560,6 +599,11 @@ button:disabled {
     scrollbar-color: var(--line-2) transparent;
   }
 
+  .wallet-list,
+  .candidate-list {
+    flex: 1 1 auto;
+  }
+
   .wallet-list {
     max-height: calc(100vh - 178px);
   }
@@ -619,8 +663,13 @@ button:disabled {
   }
 
   .header-actions button,
-  .panel-head button {
+  .panel-head button,
+  .wallet-add button {
     flex: 1;
+  }
+
+  .wallet-add {
+    grid-template-columns: 1fr;
   }
 
   .ops-grid,

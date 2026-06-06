@@ -38,6 +38,11 @@
           <p>每个新买单固定金额。</p>
         </article>
         <article class="ops-card">
+          <span>自己的钱包</span>
+          <strong id="execution-wallet-title">-</strong>
+          <p id="execution-wallet-detail">读取配置中。</p>
+        </article>
+        <article class="ops-card">
           <span>最近检查</span>
           <strong id="last-check">-</strong>
           <p id="next-check">等待后台轮询。</p>
@@ -59,6 +64,10 @@
               <p>这里的钱包会被后台自动轮询；可随时暂停或恢复。</p>
             </div>
           </div>
+          <form class="wallet-add" id="wallet-add-form">
+            <input id="wallet-address-input" name="wallet" placeholder="粘贴 0x 钱包地址" autocomplete="off" spellcheck="false" />
+            <button class="secondary-button" type="submit">添加</button>
+          </form>
           <div id="followed-wallets" class="wallet-list"></div>
         </article>
 

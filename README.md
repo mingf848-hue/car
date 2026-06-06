@@ -6,7 +6,7 @@
 
 ## 功能
 
-- 监控 `SMART_WALLETS` 里的 Polymarket 钱包交易。
+- 监控页面里添加或从候选池选择的 Polymarket 钱包交易。
 - 首次启动默认只做预热，不追历史单，面板会显示“首次预热”事件。
 - 跟随买入开仓，跟随卖出自动平掉该 token 的本地跟单持仓。
 - 每次 BUY 固定 `COPY_AMOUNT_USDC=5`。
@@ -15,7 +15,7 @@
 - 体育市场筛选：Gamma 市场字段 -> 体育关键词 -> DeepSeek 兜底分类。
 - 下单前检查当前买入/卖出价格，超过 `MAX_SLIPPAGE_BPS` 自动跳过。
 - SQLite 去重、冷却时间、每日实盘最大金额控制。
-- 可在 UI 里直接选择或暂停跟单钱包；环境变量钱包和页面选择的钱包会合并为实际跟单池。
+- 可在 UI 里直接添加、选择、暂停、恢复或删除跟单钱包；不再使用环境变量配置聪明钱包。
 - Zeabur Dockerfile 部署。
 
 ## 目录
@@ -43,7 +43,7 @@ zeabur.json             Zeabur 端口配置
 2. Zeabur 新建 Project，选择 GitHub 仓库。
 3. 构建方式选择 Dockerfile。
 4. 地区建议优先选 `Tokyo`。不要选择新加坡。是否受限以 Polymarket 官方接口实时返回为准，本程序默认会检查并在受限时停止开仓。
-5. 在 Zeabur Variables 填入 `.env.example` 里的变量。
+5. 在 Zeabur Variables 填入 `.env.example` 里的变量。跟单钱包不要填环境变量，进页面后添加。
 6. 启动后访问：
 
 ```text
@@ -55,7 +55,6 @@ https://你的-zeabur-域名/events
 ## 必填环境变量
 
 ```env
-SMART_WALLETS=0xSmartWallet1,0xSmartWallet2
 COPY_AMOUNT_USDC=5
 EXECUTION_MODE=dry_run
 ACK_TRADING_RISKS=no
@@ -64,24 +63,43 @@ AUTO_FOLLOW_SELLS=true
 SELL_MODE=close_full_on_leader_sell
 ```
 
-`SMART_WALLETS` 可以用逗号、空格、分号或换行分隔。在 Zeabur 的变量输入框里可以直接这样填：
-
-```env
-SMART_WALLETS=0x钱包1
-0x钱包2
-0x钱包3
-```
-
 `COPY_AMOUNT_USDC=5` 是本项目的核心规则：所有被复制的 BUY 都会按 5 USDC 走。
 
 `SELL_MODE=close_full_on_leader_sell` 是当前自动跟卖规则：只要聪明钱包对某个 token 发出 SELL，本系统会检查自己是否曾经跟买并还有未平仓份额；如果有，就卖出这部分持仓。没有本地持仓时不会裸卖。
+
+## 接入自己的钱包
+
+自己的钱包是“实际下单钱包”，只能放在 Zeabur Variables，不能放进网页表单。网页只负责管理要跟单的聪明钱包。
+
+模拟模式不需要接入自己的钱包：
+
+```env
+EXECUTION_MODE=dry_run
+ACK_TRADING_RISKS=no
+```
+
+真实下单时再配置：
+
+```env
+EXECUTION_MODE=live
+ACK_TRADING_RISKS=yes
+POLYMARKET_PRIVATE_KEY=你的私钥
+POLYMARKET_FUNDER=你的Polymarket代理钱包地址
+POLYMARKET_SIGNATURE_TYPE=1或2或留空
+CLOB_API_KEY=
+CLOB_API_SECRET=
+CLOB_API_PASSPHRASE=
+DERIVE_API_KEY_IF_MISSING=true
+```
+
+如果没有填 CLOB API key，SDK 会在 `DERIVE_API_KEY_IF_MISSING=true` 时尝试从私钥派生。不要把私钥发到聊天里，只放在 Zeabur Variables 或本地 `.env`。
 
 ## 为什么没有自动跟单
 
 服务启动后会自动轮询，不需要人工点按钮。页面上的“手动补查”只是立刻额外检查一次。  
 如果 Zeabur 已经部署成功，但自动跟单没有成交，优先按下面查：
 
-1. `SMART_WALLETS` 没填或填错：控制台会出现“配置错误”。Zeabur 的 Variables 里必须填真实 Polymarket 钱包地址。
+1. 没有选择跟单钱包：进控制台，在“正在跟单的钱包”里粘贴 0x 地址添加，或点“加载候选”后选择钱包跟单。
 2. “自动跟单”和“发现钱包”不是一回事：自动跟单只看已启用的钱包；要看别人钱包，先点“加载候选”，查看下注详情后点“跟单”。
 3. 第一次自动检查是预热：默认 `COPY_HISTORICAL_ON_FIRST_RUN=false`，历史交易只记录不跟单，之后出现的新交易才会触发跟买/跟卖。页面事件里会显示“首次预热”。
 4. 钱包近期没有交易：程序会显示“这个钱包近期没有读取到可跟踪交易”。换一个近期活跃的钱包，或等它有新交易。
@@ -107,7 +125,7 @@ CLOB_API_PASSPHRASE=
 DERIVE_API_KEY_IF_MISSING=true
 ```
 
-如果没有填 CLOB API key，SDK 会在 `DERIVE_API_KEY_IF_MISSING=true` 时尝试从私钥派生。不要把私钥发到聊天里，只放在 Zeabur Variables 或本地 `.env`。
+网页顶部“自己的钱包”会显示模拟模式、未接入、待确认或已接入，但不会显示任何密钥内容。
 
 ## 接口
 

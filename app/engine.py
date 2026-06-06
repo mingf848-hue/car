@@ -43,7 +43,7 @@ class CopyTradingEngine:
             result = CopyResult(
                 trade=None,
                 action="config_error",
-                reason="未选择跟单钱包，请先在候选钱包里点“跟单”，或在 Zeabur Variables 填写 SMART_WALLETS",
+                reason="未选择跟单钱包，请先在页面里添加钱包，或从候选钱包里点“跟单”",
             )
             self.state.record_result(result)
             summary["errors"].append(result.reason)
@@ -124,7 +124,7 @@ class CopyTradingEngine:
         return summary
 
     def _target_wallets(self) -> List[str]:
-        wallets = [wallet.lower().strip() for wallet in self.settings.smart_wallets if wallet.strip()]
+        wallets: List[str] = []
         try:
             wallets.extend(self.state.active_followed_wallet_addresses())
         except AttributeError:
