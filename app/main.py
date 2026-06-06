@@ -15,10 +15,12 @@ from .config import Settings
 from .engine import CopyTradingEngine
 from .executor import build_executor
 from .market_filter import DeepSeekSportsClassifier
+from .pnl import extract_pnl
 from .polymarket_client import PolymarketPublicClient
 from .recommendations import recommend_wallets
 from .scoring import score_wallets
 from .state import StateStore
+from .translation import translate_market, translate_outcome
 
 load_dotenv()
 
@@ -82,6 +84,7 @@ def _trade_payload(wallet: str, raw: Dict[str, Any]) -> Dict[str, Any]:
     from .models import WalletTrade
 
     trade = WalletTrade.from_activity(wallet, raw)
+    pnl, pnl_available, pnl_source = extract_pnl(raw)
     return {
         "wallet": wallet,
         "trade_id": trade.trade_id,
@@ -91,10 +94,15 @@ def _trade_payload(wallet: str, raw: Dict[str, Any]) -> Dict[str, Any]:
         "token_id": trade.token_id,
         "market_slug": trade.market_slug,
         "market_title": trade.market_title,
+        "market_title_zh": translate_market(trade.market_slug, trade.market_title),
         "outcome": trade.outcome,
+        "outcome_zh": translate_outcome(trade.outcome),
         "price": trade.price,
         "size": trade.size,
         "usdc_size": round(trade.usdc_size, 2),
+        "pnl": round(pnl, 2) if pnl_available else None,
+        "pnl_available": pnl_available,
+        "pnl_source": pnl_source,
         "raw": raw,
     }
 
@@ -167,8 +175,27 @@ async def portfolio() -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
     state: StateStore = runtime["state"]
     stats = state.stats()
-    positions = state.positions(include_closed=False)
+    all_positions = state.positions(include_closed=True)
+    positions = [
+        {
+            **item,
+            "market_title_zh": translate_market(item.get("market_slug") or "", ""),
+            "outcome_zh": translate_outcome(item.get("outcome") or ""),
+            "realized_pnl": 0,
+            "realized_pnl_available": False,
+        }
+        for item in all_positions
+        if float(item.get("open_shares") or 0) > 0 and item.get("status") == "open"
+    ]
     net_cash_flow = round(float(stats["sell_usdc"]) - float(stats["buy_usdc"]), 2)
+    realized_pnl = round(
+        sum(
+            float(item.get("total_sell_usdc") or 0) - float(item.get("total_buy_usdc") or 0)
+            for item in all_positions
+            if float(item.get("open_shares") or 0) <= 0 or item.get("status") == "closed"
+        ),
+        2,
+    )
     open_cost = round(sum(float(item.get("total_buy_usdc") or 0) for item in positions), 2)
     return {
         "mode": settings.execution_mode,
@@ -182,6 +209,7 @@ async def portfolio() -> Dict[str, Any]:
             "buy_usdc": round(float(stats["buy_usdc"]), 2),
             "sell_usdc": round(float(stats["sell_usdc"]), 2),
             "net_cash_flow": net_cash_flow,
+            "realized_pnl": realized_pnl,
             "open_cost": open_cost,
             "open_positions": int(stats["open_positions"]),
             "events": int(stats["events"]),
@@ -271,10 +299,20 @@ async def wallet_trades(wallet: str, limit: int = 30) -> Dict[str, Any]:
             "wallet": wallet,
             "error": _error_message(exc),
             "trades": [],
-            "summary": {"count": 0, "buys": 0, "sells": 0, "unknown": 0, "total_usdc": 0},
+            "summary": {
+                "count": 0,
+                "buys": 0,
+                "sells": 0,
+                "unknown": 0,
+                "total_usdc": 0,
+                "pnl": 0,
+                "pnl_available": False,
+                "pnl_available_count": 0,
+            },
         }
     trades = [_trade_payload(wallet, raw) for raw in raw_trades]
     total_usdc = round(sum(item["usdc_size"] for item in trades), 2)
+    pnl_values = [float(item["pnl"]) for item in trades if item.get("pnl_available") and item.get("pnl") is not None]
     buys = sum(1 for item in trades if item["side"] == "BUY")
     sells = sum(1 for item in trades if item["side"] == "SELL")
     unknown = len(trades) - buys - sells
@@ -288,6 +326,9 @@ async def wallet_trades(wallet: str, limit: int = 30) -> Dict[str, Any]:
             "sells": sells,
             "unknown": unknown,
             "total_usdc": total_usdc,
+            "pnl": round(sum(pnl_values), 2),
+            "pnl_available": bool(pnl_values),
+            "pnl_available_count": len(pnl_values),
         },
     }
 
@@ -295,7 +336,19 @@ async def wallet_trades(wallet: str, limit: int = 30) -> Dict[str, Any]:
 @app.get("/events")
 async def events(limit: int = 50) -> Dict[str, Any]:
     state: StateStore = runtime["state"]
-    return {"events": state.recent_events(limit)}
+    items = []
+    for item in state.recent_events(limit):
+        items.append(
+            {
+                **item,
+                "market_title_zh": translate_market(
+                    item.get("market_slug") or "",
+                    (item.get("payload") or {}).get("market") or "",
+                ),
+                "outcome_zh": translate_outcome(item.get("outcome") or ""),
+            }
+        )
+    return {"events": items}
 
 
 @app.get("/positions")

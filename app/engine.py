@@ -40,13 +40,7 @@ class CopyTradingEngine:
         }
 
         if not wallets:
-            result = CopyResult(
-                trade=None,
-                action="config_error",
-                reason="未选择跟单钱包，请先在页面里添加钱包，或从候选钱包里点“跟单”",
-            )
-            self.state.record_result(result)
-            summary["errors"].append(result.reason)
+            summary["errors"].append("未选择跟单钱包，请先在页面里添加钱包，或从候选钱包里点“跟单”")
             return summary
 
         if self.settings.block_on_geoblock:

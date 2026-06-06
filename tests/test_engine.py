@@ -228,6 +228,7 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(summary["wallets"], 0)
             self.assertEqual(summary["errors"], ["未选择跟单钱包，请先在页面里添加钱包，或从候选钱包里点“跟单”"])
             self.assertEqual(executor.orders, [])
+            self.assertEqual(state.recent_events(10), [])
 
 
 if __name__ == "__main__":

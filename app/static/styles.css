@@ -320,6 +320,10 @@ h2 {
   line-height: 1.35;
 }
 
+.recommend-card .mini-note {
+  color: var(--muted);
+}
+
 .metric-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -489,6 +493,18 @@ button:disabled {
 .side-pill.unknown {
   color: var(--violet);
   background: rgba(157, 140, 255, 0.12);
+}
+
+.profit-positive {
+  color: var(--green);
+}
+
+.profit-negative {
+  color: var(--red);
+}
+
+.profit-muted {
+  color: var(--muted);
 }
 
 .trade-card {

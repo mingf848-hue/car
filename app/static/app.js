@@ -6,6 +6,7 @@ const appState = {
   selectedWallet: "",
   selectedLabel: "",
   selectedTrades: [],
+  selectedSummary: null,
   tradeFilter: "ALL",
   detailLoading: false,
   detailError: "",
@@ -29,6 +30,19 @@ function number(value, digits = 2) {
 
 function pct(value) {
   return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
+function hasPnl(item, key = "pnl") {
+  return Boolean(item?.[`${key}_available`]) && item?.[key] !== null && item?.[key] !== undefined;
+}
+
+function pnlClass(value, available) {
+  if (!available) return "profit-muted";
+  return Number(value || 0) >= 0 ? "profit-positive" : "profit-negative";
+}
+
+function pnlText(value, available) {
+  return available ? usdc(value) : "未返回";
 }
 
 function timeText(seconds) {
@@ -170,8 +184,8 @@ function renderHeader() {
   const [mode, detail] = statusTone();
   $("mode-pill").textContent = mode;
   $("state-detail").textContent = detail;
-  $("net-pnl").textContent = usdc(perf.net_cash_flow || 0);
-  $("net-pnl").style.color = Number(perf.net_cash_flow || 0) >= 0 ? "var(--green)" : "var(--red)";
+  $("net-pnl").textContent = usdc(perf.realized_pnl || 0);
+  $("net-pnl").style.color = Number(perf.realized_pnl || 0) >= 0 ? "var(--green)" : "var(--red)";
   $("balance-value").textContent = balance.available_usdc == null ? "--" : usdc(balance.available_usdc);
   $("balance-label").textContent = balance.label || "未接入";
   $("buy-total").textContent = usdc(perf.buy_usdc || 0);
@@ -190,6 +204,7 @@ function emptyState(title, detail) {
 function recommendationCard(item, compact = false) {
   const followed = appState.wallets.some((wallet) => wallet.wallet.toLowerCase() === item.wallet.toLowerCase());
   const tradesLabel = `${item.trades || 0} 笔`;
+  const recentPnlAvailable = hasPnl(item, "recent_pnl");
   return `<article class="recommend-card" data-wallet="${escapeHtml(item.wallet)}">
     <div class="card-top">
       <div>
@@ -200,10 +215,11 @@ function recommendationCard(item, compact = false) {
     </div>
     <p>${escapeHtml(item.ai_reason || "正在生成推荐理由。")}</p>
     <div class="metric-row">
-      <div class="metric-pill"><span>盈利</span><strong>${usdc(item.leaderboard_pnl)}</strong></div>
+      <div class="metric-pill"><span>榜单盈利</span><strong>${usdc(item.leaderboard_pnl)}</strong></div>
+      <div class="metric-pill"><span>近期盈亏</span><strong class="${pnlClass(item.recent_pnl, recentPnlAvailable)}">${pnlText(item.recent_pnl, recentPnlAvailable)}</strong></div>
       <div class="metric-pill"><span>体育占比</span><strong>${pct(item.sports_ratio)}</strong></div>
-      <div class="metric-pill"><span>近期</span><strong>${tradesLabel}</strong></div>
     </div>
+    <p class="mini-note">近期 ${tradesLabel} · 盈亏样本 ${item.recent_pnl_trades || 0} 笔</p>
     ${compact ? "" : `<p>风险：${escapeHtml(item.risk || "注意滑点和集中交易。")}</p>`}
     <div class="card-actions">
       <button class="card-action" data-action="inspect-recommendation" data-wallet="${escapeHtml(item.wallet)}" data-label="${escapeHtml(item.label || "")}">看下注</button>
@@ -282,11 +298,11 @@ function renderPositions() {
     return;
   }
   list.innerHTML = positions.slice(0, 6).map((item) => `<article class="position-card">
-    <h3>${escapeHtml(item.market_slug || item.token_id)}</h3>
-    <p>${escapeHtml(item.outcome || "-")} · ${number(item.open_shares, 4)} 份</p>
+    <h3>${escapeHtml(item.market_title_zh || item.market_slug || item.token_id)}</h3>
+    <p>${escapeHtml(item.outcome_zh || item.outcome || "-")} · ${number(item.open_shares, 4)} 份</p>
     <div class="metric-row">
-      <div class="metric-pill"><span>买入</span><strong>${usdc(item.total_buy_usdc)}</strong></div>
-      <div class="metric-pill"><span>卖出</span><strong>${usdc(item.total_sell_usdc)}</strong></div>
+      <div class="metric-pill"><span>成本</span><strong>${usdc(item.total_buy_usdc)}</strong></div>
+      <div class="metric-pill"><span>已卖出</span><strong>${usdc(item.total_sell_usdc)}</strong></div>
       <div class="metric-pill"><span>均价</span><strong>${number(item.avg_entry_price, 4)}</strong></div>
     </div>
   </article>`).join("");
@@ -294,17 +310,20 @@ function renderPositions() {
 
 function renderEvents(items) {
   const list = $("events-list");
-  if (!items.length) {
+  const visibleItems = (items || []).filter((item) => !(
+    item.action === "config_error" && String(item.reason || "").startsWith("未选择跟单钱包")
+  ));
+  if (!visibleItems.length) {
     list.innerHTML = emptyState("暂无事件", "后台自动检查后会记录跟买、跳过和风控结果。");
     return;
   }
-  list.innerHTML = items.map((item) => `<article class="event-card">
+  list.innerHTML = visibleItems.map((item) => `<article class="event-card">
     <div class="event-top">
       <span class="event-tag ${escapeHtml(item.action)}">${escapeHtml(actionText(item.action))}</span>
       <small>${timeText(item.created_at)}</small>
     </div>
     <p>${escapeHtml(reasonText(item.reason))}</p>
-    <small>${escapeHtml(item.market_slug || item.wallet || "-")} ${item.amount_usdc ? `· ${usdc(item.amount_usdc)}` : ""}</small>
+    <small>${escapeHtml(item.market_title_zh || item.market_slug || item.wallet || "-")} ${item.amount_usdc ? `· ${usdc(item.amount_usdc)}` : ""}</small>
   </article>`).join("");
 }
 
@@ -335,11 +354,12 @@ function renderDetail() {
   }
   const buys = appState.selectedTrades.filter((item) => item.side === "BUY").length;
   const sells = appState.selectedTrades.filter((item) => item.side === "SELL").length;
-  const total = appState.selectedTrades.reduce((sum, item) => sum + Number(item.usdc_size || 0), 0);
+  const summary = appState.selectedSummary || {};
+  const detailPnlAvailable = Boolean(summary.pnl_available);
   $("detail-summary").innerHTML = `
     <div><span>近期交易</span><strong>${appState.selectedTrades.length}</strong></div>
     <div><span>买入 / 卖出</span><strong>${buys} / ${sells}</strong></div>
-    <div><span>名义金额</span><strong>${usdc(total)}</strong></div>
+    <div><span>近期盈亏</span><strong class="${pnlClass(summary.pnl, detailPnlAvailable)}">${pnlText(summary.pnl, detailPnlAvailable)}</strong></div>
   `;
   const filtered = appState.selectedTrades.filter((item) => appState.tradeFilter === "ALL" || tradeSideKey(item.side) === appState.tradeFilter);
   if (!filtered.length) {
@@ -351,16 +371,17 @@ function renderDetail() {
 
 function tradeCard(trade) {
   const side = tradeSideKey(trade.side).toLowerCase();
+  const tradePnlAvailable = hasPnl(trade);
   return `<article class="trade-card ${side}" data-action="open-trade" data-trade="${escapeHtml(trade.trade_id)}">
     <div class="trade-meta">
       <span class="side-pill ${side}">${tradeSideText(trade.side)}</span>
       <small>${timeText(trade.timestamp)}</small>
     </div>
-    <h3>${escapeHtml(trade.market_title || trade.market_slug || "未知市场")}</h3>
-    <p>${escapeHtml(trade.outcome || "-")} · ${number(trade.size, 4)} 份 · 价格 ${number(trade.price, 4)}</p>
+    <h3>${escapeHtml(trade.market_title_zh || trade.market_title || trade.market_slug || "未知市场")}</h3>
+    <p>${escapeHtml(trade.outcome_zh || trade.outcome || "-")} · ${number(trade.size, 4)} 份 · 价格 ${number(trade.price, 4)}</p>
     <div class="metric-row">
       <div class="metric-pill"><span>金额</span><strong>${usdc(trade.usdc_size)}</strong></div>
-      <div class="metric-pill"><span>方向</span><strong>${tradeSideText(trade.side)}</strong></div>
+      <div class="metric-pill"><span>盈亏</span><strong class="${pnlClass(trade.pnl, tradePnlAvailable)}">${pnlText(trade.pnl, tradePnlAvailable)}</strong></div>
       <div class="metric-pill"><span>时间</span><strong>${relative(trade.timestamp)}</strong></div>
     </div>
   </article>`;
@@ -405,6 +426,7 @@ async function selectWallet(wallet, label = "") {
   appState.selectedWallet = wallet;
   appState.selectedLabel = label;
   appState.selectedTrades = [];
+  appState.selectedSummary = null;
   appState.detailLoading = true;
   appState.detailError = "";
   switchScreen("detail");
@@ -417,6 +439,7 @@ async function selectWallet(wallet, label = "") {
       return;
     }
     appState.selectedTrades = result.trades || [];
+    appState.selectedSummary = result.summary || null;
   } catch (error) {
     appState.detailError = error.message;
   } finally {
@@ -456,6 +479,7 @@ async function deleteWallet(wallet) {
     appState.selectedWallet = "";
     appState.selectedLabel = "";
     appState.selectedTrades = [];
+    appState.selectedSummary = null;
     appState.detailError = "";
     appState.detailLoading = false;
   }
@@ -494,12 +518,15 @@ async function diagnose() {
 function openTradeSheet(tradeId) {
   const trade = appState.selectedTrades.find((item) => item.trade_id === tradeId);
   if (!trade) return;
-  $("sheet-content").innerHTML = `<h2>${escapeHtml(trade.market_title || trade.market_slug || "下注详情")}</h2>
-    <p>${escapeHtml(trade.outcome || "-")} · ${tradeSideText(trade.side)} · ${timeText(trade.timestamp)}</p>
+  const tradePnlAvailable = hasPnl(trade);
+  $("sheet-content").innerHTML = `<h2>${escapeHtml(trade.market_title_zh || trade.market_title || trade.market_slug || "下注详情")}</h2>
+    <p>${escapeHtml(trade.outcome_zh || trade.outcome || "-")} · ${tradeSideText(trade.side)} · ${timeText(trade.timestamp)}</p>
     <div class="sheet-grid">
       <div><span>金额</span><strong>${usdc(trade.usdc_size)}</strong></div>
+      <div><span>单笔盈亏</span><strong class="${pnlClass(trade.pnl, tradePnlAvailable)}">${pnlText(trade.pnl, tradePnlAvailable)}</strong></div>
       <div><span>份额</span><strong>${number(trade.size, 6)}</strong></div>
       <div><span>价格</span><strong>${number(trade.price, 6)}</strong></div>
+      <div><span>成交时间</span><strong>${timeText(trade.timestamp)}</strong></div>
       <div><span>市场</span><strong>${escapeHtml(trade.market_slug || "-")}</strong></div>
       <div><span>Token</span><strong>${escapeHtml(trade.token_id || "-")}</strong></div>
       <div><span>钱包</span><strong>${escapeHtml(shortWallet(trade.wallet || appState.selectedWallet))}</strong></div>
@@ -568,5 +595,5 @@ window.addEventListener("DOMContentLoaded", () => {
   renderDetail();
   refreshCore().catch((error) => toast(`加载失败：${error.message}`, true));
   loadRecommendations().catch((error) => toast(`推荐失败：${error.message}`, true));
-  window.setInterval(() => refreshCore().catch(() => undefined), 8000);
+  window.setInterval(() => refreshCore().catch(() => undefined), 5000);
 });

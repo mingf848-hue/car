@@ -239,7 +239,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 - `COOLDOWN_SECONDS_PER_TOKEN=120`：同一 outcome token 两分钟内只跟一次 BUY；SELL 不受 BUY 冷却影响。
 - `COPY_HISTORICAL_ON_FIRST_RUN=false`：首次启动只记录已看到的旧交易，不追旧单。
 - `AUTO_START=true`：服务启动后自动轮询检查钱包交易。
-- `POLL_INTERVAL_SECONDS=20`：每 20 秒自动检查一次。想更接近实时可设为 `5` 或 `10`。
+- `POLL_INTERVAL_SECONDS=5`：每 5 秒自动检查一次，更接近实时跟单。
 - `BLOCK_ON_GEOBLOCK=true`：自动检查时调用官方 geoblock 检查，受限或 close-only 时不做开仓。
 
 ## GitHub 自动测试

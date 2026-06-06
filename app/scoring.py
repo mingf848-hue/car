@@ -6,22 +6,13 @@ from typing import Any, Dict, List
 from .config import Settings
 from .market_filter import looks_like_sports
 from .models import WalletTrade
-
-
-def _maybe_float(value: Any) -> float:
-    try:
-        if value is None or value == "":
-            return 0.0
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
+from .pnl import extract_pnl
 
 
 def _pnl_from_raw(raw: Dict[str, Any]) -> float:
-    for key in ("pnl", "profit", "realizedPnl", "realizedPnL", "netPnl"):
-        value = _maybe_float(raw.get(key))
-        if value:
-            return value
+    value, available, _ = extract_pnl(raw)
+    if available:
+        return value
     return 0.0
 
 

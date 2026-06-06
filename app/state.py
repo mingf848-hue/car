@@ -9,6 +9,9 @@ from typing import Any, Dict, List, Optional
 from .models import CopyResult, WalletTrade
 
 
+NO_WALLET_CONFIG_REASON_PREFIX = "未选择跟单钱包"
+
+
 class StateStore:
     def __init__(self, sqlite_path: Path):
         self.sqlite_path = sqlite_path
@@ -391,7 +394,14 @@ class StateStore:
 
     def stats(self) -> Dict[str, Any]:
         with self._connect() as con:
-            events = con.execute("SELECT COUNT(*) AS count FROM copy_events").fetchone()
+            events = con.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM copy_events
+                WHERE NOT (action = 'config_error' AND reason LIKE ?)
+                """,
+                (f"{NO_WALLET_CONFIG_REASON_PREFIX}%",),
+            ).fetchone()
             buys = con.execute(
                 "SELECT COUNT(*) AS count, COALESCE(SUM(amount_usdc), 0) AS total FROM copy_events WHERE action IN ('dry_run_buy', 'live_buy')"
             ).fetchone()
@@ -416,10 +426,11 @@ class StateStore:
             rows = con.execute(
                 """
                 SELECT * FROM copy_events
+                WHERE NOT (action = 'config_error' AND reason LIKE ?)
                 ORDER BY id DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (f"{NO_WALLET_CONFIG_REASON_PREFIX}%", limit),
             ).fetchall()
         events = []
         for row in rows:

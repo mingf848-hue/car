@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 from .config import Settings
 from .market_filter import looks_like_sports
 from .models import WalletTrade
+from .pnl import extract_pnl
+from .translation import translate_market, translate_outcome
 
 
 def _float(value: Any) -> float:
@@ -42,15 +44,29 @@ def _leader_volume(item: Dict[str, Any]) -> float:
     return 0.0
 
 
-def _rule_reason(score: float, sports_ratio: float, trades: int, newest_age_hours: float, pnl: float) -> str:
+def _rule_reason(
+    score: float,
+    sports_ratio: float,
+    trades: int,
+    newest_age_hours: float,
+    pnl: float,
+    recent_pnl: float,
+    recent_pnl_available: bool,
+) -> str:
     if trades == 0:
         return "近期没有公开下注记录，暂不建议直接跟单。"
+    if recent_pnl_available and recent_pnl < 0:
+        return "近期公开盈亏为负，建议先观察下注质量，不要直接跟重仓。"
+    if recent_pnl_available and recent_pnl > 0 and score >= 76:
+        return "榜单盈利和近期公开盈亏都为正，适合作为优先观察钱包。"
     if score >= 78:
         return "盈利、活跃度和体育占比都靠前，适合作为优先观察钱包。"
     if sports_ratio < 0.55:
         return "近期交易里体育占比偏低，建议只观察体育单。"
     if newest_age_hours > 72:
         return "近期活跃度下降，适合先加入观察而不是立即重仓。"
+    if not recent_pnl_available:
+        return "接口未返回近期盈亏，建议打开下注详情核对单子质量。"
     if pnl <= 0:
         return "近期盈利不突出，建议结合下注详情再决定。"
     return "指标中等，适合查看下注详情后再跟单。"
@@ -79,39 +95,58 @@ def _score_candidate(
     total_notional = round(sum(trade.usdc_size for trade in trades), 2)
     newest_age_hours = 9999.0
     sports_count = 0
+    recent_pnl = 0.0
+    recent_pnl_trades = 0
     for trade in trades:
         newest_age_hours = min(newest_age_hours, max(0, now - trade.timestamp) / 3600)
         if looks_like_sports(trade, None):
             sports_count += 1
+        trade_pnl, has_pnl, _ = extract_pnl(trade.raw)
+        if has_pnl:
+            recent_pnl += trade_pnl
+            recent_pnl_trades += 1
 
     if not trades:
         newest_age_hours = 9999.0
     sports_ratio = sports_count / len(trades) if trades else 0.0
-    activity_score = min(len(trades) / 30, 1) * 24
-    sports_score = sports_ratio * 28
-    freshness_score = max(0, 1 - newest_age_hours / (24 * 7)) * 18
-    pnl_score = max(-12, min(18, pnl / 250))
-    volume_score = min(volume / 50_000, 1) * 12
-    score = round(max(0, min(100, activity_score + sports_score + freshness_score + pnl_score + volume_score)), 1)
-    sample_trades = [
-        {
-            "timestamp": trade.timestamp,
-            "side": trade.side,
-            "market_title": trade.market_title,
-            "market_slug": trade.market_slug,
-            "outcome": trade.outcome,
-            "price": trade.price,
-            "size": trade.size,
-            "usdc_size": round(trade.usdc_size, 2),
-        }
-        for trade in trades[:3]
-    ]
+    activity_score = min(len(trades) / 30, 1) * 22
+    sports_score = sports_ratio * 26
+    freshness_score = max(0, 1 - newest_age_hours / (24 * 7)) * 16
+    pnl_score = max(-10, min(12, pnl / 300))
+    recent_pnl_score = max(-16, min(22, recent_pnl / 50)) if recent_pnl_trades else 0
+    volume_score = min(volume / 50_000, 1) * 10
+    score = round(
+        max(0, min(100, activity_score + sports_score + freshness_score + pnl_score + recent_pnl_score + volume_score)),
+        1,
+    )
+    sample_trades = []
+    for trade in trades[:3]:
+        trade_pnl, has_pnl, _ = extract_pnl(trade.raw)
+        sample_trades.append(
+            {
+                "timestamp": trade.timestamp,
+                "side": trade.side,
+                "market_title": trade.market_title,
+                "market_title_zh": translate_market(trade.market_slug, trade.market_title),
+                "market_slug": trade.market_slug,
+                "outcome": trade.outcome,
+                "outcome_zh": translate_outcome(trade.outcome),
+                "price": trade.price,
+                "size": trade.size,
+                "usdc_size": round(trade.usdc_size, 2),
+                "pnl": round(trade_pnl, 2) if has_pnl else None,
+                "pnl_available": has_pnl,
+            }
+        )
     return {
         "wallet": wallet,
         "label": _leader_name(leader, wallet),
         "rank": leader.get("rank"),
         "leaderboard_pnl": round(pnl, 2),
         "leaderboard_volume": round(volume, 2),
+        "recent_pnl": round(recent_pnl, 2),
+        "recent_pnl_available": bool(recent_pnl_trades),
+        "recent_pnl_trades": recent_pnl_trades,
         "score": score,
         "trades": len(trades),
         "buys": buys,
@@ -120,7 +155,15 @@ def _score_candidate(
         "total_notional": total_notional,
         "newest_age_hours": round(newest_age_hours, 2),
         "ai_label": "规则推荐",
-        "ai_reason": _rule_reason(score, sports_ratio, len(trades), newest_age_hours, pnl),
+        "ai_reason": _rule_reason(
+            score,
+            sports_ratio,
+            len(trades),
+            newest_age_hours,
+            pnl,
+            recent_pnl,
+            bool(recent_pnl_trades),
+        ),
         "risk": _rule_risk(sports_ratio, len(trades), newest_age_hours),
         "recent_trades": sample_trades,
         "raw": leader,
@@ -149,6 +192,8 @@ async def _deepseek_notes(settings: Settings, candidates: List[Dict[str, Any]]) 
                 "label": item["label"],
                 "score": item["score"],
                 "pnl": item["leaderboard_pnl"],
+                "recent_pnl": item["recent_pnl"],
+                "recent_pnl_available": item["recent_pnl_available"],
                 "volume": item["leaderboard_volume"],
                 "trades": item["trades"],
                 "sports_ratio": item["sports_ratio"],

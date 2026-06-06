@@ -57,7 +57,7 @@ class Settings:
     ack_trading_risks: bool = False
     auto_start: bool = True
     copy_historical_on_first_run: bool = False
-    poll_interval_seconds: int = 20
+    poll_interval_seconds: int = 5
     activity_limit: int = 60
 
     sports_only: bool = True
@@ -108,7 +108,7 @@ class Settings:
             ack_trading_risks=_bool("ACK_TRADING_RISKS", False),
             auto_start=_bool("AUTO_START", True),
             copy_historical_on_first_run=_bool("COPY_HISTORICAL_ON_FIRST_RUN", False),
-            poll_interval_seconds=_int("POLL_INTERVAL_SECONDS", 20),
+            poll_interval_seconds=_int("POLL_INTERVAL_SECONDS", 5),
             activity_limit=_int("ACTIVITY_LIMIT", 60),
             sports_only=_bool("SPORTS_ONLY", True),
             use_deepseek_classifier=_bool("USE_DEEPSEEK_CLASSIFIER", True),

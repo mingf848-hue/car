@@ -36,6 +36,7 @@ class FakeRecommendationPublic:
                     "slug": "nba-finals-game",
                     "title": "Will Team A win the NBA game?",
                     "outcome": "Yes",
+                    "profit": "32.5",
                 },
                 {
                     "side": "SELL",
@@ -46,6 +47,7 @@ class FakeRecommendationPublic:
                     "slug": "mlb-total",
                     "title": "MLB total over 7.5?",
                     "outcome": "Over",
+                    "realizedPnl": "-5",
                 },
             ]
         return []
@@ -67,6 +69,10 @@ class RecommendationTests(unittest.TestCase):
         self.assertIn("ai_reason", result["wallets"][0])
         self.assertEqual(result["wallets"][0]["buys"], 1)
         self.assertEqual(result["wallets"][0]["sells"], 1)
+        self.assertTrue(result["wallets"][0]["recent_pnl_available"])
+        self.assertEqual(result["wallets"][0]["recent_pnl"], 27.5)
+        self.assertEqual(result["wallets"][0]["recent_pnl_trades"], 2)
+        self.assertEqual(result["wallets"][0]["recent_trades"][0]["pnl"], 32.5)
 
 
 if __name__ == "__main__":
