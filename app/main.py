@@ -156,6 +156,7 @@ async def api_status() -> Dict[str, Any]:
     settings: Settings = runtime["settings"]
     return {
         "name": "polymarket-sports-copy-bot",
+        "server_time": int(time.time()),
         "config": {
             **settings.redacted(),
             "effective_wallets": _combined_wallets(settings, runtime["state"]),

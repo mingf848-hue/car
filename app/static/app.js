@@ -14,6 +14,7 @@ const appState = {
   aiLoading: false,
   aiError: "",
   aiMode: "rules",
+  serverOffsetSeconds: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +31,10 @@ function number(value, digits = 2) {
 
 function pct(value) {
   return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
+function nowSeconds() {
+  return Date.now() / 1000 + Number(appState.serverOffsetSeconds || 0);
 }
 
 function hasPnl(item, key = "pnl") {
@@ -59,7 +64,7 @@ function timeText(seconds) {
 
 function relative(seconds) {
   if (!seconds) return "-";
-  const diff = Math.round(Number(seconds) - Date.now() / 1000);
+  const diff = Math.round(Number(seconds) - nowSeconds());
   if (Math.abs(diff) < 2) return "现在";
   if (Math.abs(diff) < 60) return diff > 0 ? `${diff} 秒后` : `${Math.abs(diff)} 秒前`;
   const minutes = Math.round(Math.abs(diff) / 60);
@@ -173,7 +178,7 @@ function statusTone() {
   if (status.last_error) return ["告警", reasonText(status.last_error)];
   if (status.last_summary?.errors?.length) return ["告警", status.last_summary.errors.map(reasonText).join("；")];
   if (status.last_summary?.warmup_wallets) return ["预热", "历史交易已记录，新交易才会跟单"];
-  if (automation.next_scan_at && Number(automation.next_scan_at) < Date.now() / 1000 - 2) {
+  if (automation.next_scan_at && Number(automation.next_scan_at) < nowSeconds() - 2) {
     return ["检查中", "Polymarket 接口响应较慢，后台仍在等待"];
   }
   return ["运行中", `下次检查 ${relative(automation.next_scan_at)}`];
@@ -399,6 +404,9 @@ async function refreshCore() {
     api("/events?limit=50"),
   ]);
   appState.status = status;
+  if (status.server_time) {
+    appState.serverOffsetSeconds = Number(status.server_time) - Date.now() / 1000;
+  }
   appState.portfolio = portfolio;
   appState.wallets = wallets.wallets || [];
   renderHeader();
