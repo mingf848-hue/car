@@ -170,8 +170,12 @@ function statusTone() {
   const automation = status.automation || {};
   if (!automation.enabled || !automation.running) return ["离线", "自动轮询未运行"];
   if (!config.effective_wallets?.length) return ["待选择", "添加钱包后自动检查新交易"];
+  if (status.last_error) return ["告警", reasonText(status.last_error)];
   if (status.last_summary?.errors?.length) return ["告警", status.last_summary.errors.map(reasonText).join("；")];
   if (status.last_summary?.warmup_wallets) return ["预热", "历史交易已记录，新交易才会跟单"];
+  if (automation.next_scan_at && Number(automation.next_scan_at) < Date.now() / 1000 - 2) {
+    return ["检查中", "Polymarket 接口响应较慢，后台仍在等待"];
+  }
   return ["运行中", `下次检查 ${relative(automation.next_scan_at)}`];
 }
 

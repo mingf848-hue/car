@@ -110,14 +110,18 @@ def _trade_payload(wallet: str, raw: Dict[str, Any]) -> Dict[str, Any]:
 async def scan_loop() -> None:
     settings: Settings = runtime["settings"]
     engine: CopyTradingEngine = runtime["engine"]
+    scan_timeout_seconds = max(60, settings.poll_interval_seconds * 6)
     runtime["auto_loop_running"] = True
     while True:
         runtime["next_scan_at"] = int(time.time())
         try:
-            runtime["last_summary"] = await engine.run_once()
+            runtime["last_summary"] = await asyncio.wait_for(engine.run_once(), timeout=scan_timeout_seconds)
             runtime["last_scan_at"] = int(time.time())
             runtime["scan_count"] = int(runtime.get("scan_count") or 0) + 1
             runtime["last_error"] = None
+        except asyncio.TimeoutError:
+            runtime["last_error"] = f"scan_timeout: 本轮扫描超过 {scan_timeout_seconds} 秒，已放弃并进入下一轮"
+            runtime["last_scan_at"] = int(time.time())
         except Exception as exc:
             runtime["last_error"] = _error_message(exc)
             runtime["last_scan_at"] = int(time.time())
